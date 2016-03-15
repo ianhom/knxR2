@@ -24,12 +24,9 @@ It's probably my ownincompetence standing in my way to figure out the faults. Wo
 
 ## Wanna help?
 ===
-
 If you feel like helping towards whatever the goal of this projetc might be or become, please get in touch.
-
 ## Before we start:
 ===
-
 Please note that, however you use this toolset, which is provided as is and without any warranty or suitability for a specific purpose,
 nothing contained herein has been run through any certification or validation of the KNX organisation or any certified authentication centre.
 It is provided as starting point and in the hope that it may be useful to you.
@@ -124,29 +121,43 @@ tail -f /var/log/knx/knx.log
 
 ### knxbackbone
 ===
-This process doesn't really do much. In fact it simply creates a shared memory segment and ... well, nothing else.
+This process doesn't really do much. In fact it simply creates a shared memory segment and ... well, nothing else. This shared memory segment obtains its structure through "eib.c" and "eib.h", which are the one library for accessing this shared memory segment.
+Every application has, by being linked against eib.o (or the library where it resides) access to this simulated knx bus, be it the knxtpbridge, or the knxmon or the sendDATATYPE programs. Each application also obtains an APN (Access Port Number) which uniquely identifies this application user.  
+Every message to be send somewhere is put into this queue (together with its APN), where it may stay forever- or until it's overwritten - if no other process cares. That's where knxtpbridge comes into the game.  
+  
+***Note:*** eib provides the interface towards the ***knxbackbone*** and manages the APNs. An APN needs to be requested through the application. A participant without an APN should not write messages to the knxbackbone. This has been done since there could be many users only requiring read access to the eib/knx bus while never writing anything to it.
 ### knxtpbridge
 ===
-This process listens to the real EIB/KNX bus (on Raspberry) or simulates the EIB/KNX bus on Mac OS.
 ##### simulated knxtpbridge (MacOS)
 ===
+Im Simulation mode knxtpbridge basically listens to new messages with **APNs different from its own APN** on the ***knxbackbone*** and "loops-back" these messages to the ***knxbackbone*** with **its own APN**.
+This behaviour is necessary as this simulates exactly what's happening on a one wire bus like the EIB/KNX bus.  
+***NOTE:*** this behaviour misses one aspect from a real system, i.e. the collisions, which could (and will at some point in time) be simulated. However, right now the simulated knxtpbridge is a collision free bus. 
 ##### real knxtpbridge (Raspberry/Jessie)
 ===
-
+The real-life knxtpbridge basically listens to new messages with on the RS-232 port through the TPUART interface and "enters" these messages to the knxbackbone with **its own APN**.
+A loopback to the interbak ***knxbackbone*** is notnecessary since - fue to the onewire bus nature - the message is immediately received through the very same TPUART device.
 ### knxmon
 ===
 knxmon is a knx monitor and ALL GROUP OBJECT object server. Right now it only suports DPT 1.xxx and DPT.9xxx, but it is planned to support all known DPTs, which is merely a matter of time to implement than a technical challenge. This one requires a table, baos.xml, defining all the group addresses supposed to be monitored. Have a look to the provided example, which will make it rather easy to understand.  
 Monitoring of values is required e.g. by the hdlpellet or hdlsolar, which need some temperatures provided by the real temperature sensors.  
 In fact, the simulation allows you to send such values so that the handler, e.g. hdlpellet, can be tested.
+knxmon is not really visible from the outside since it's supposed to run as a daemon process.  
+A separate tools could easily be written to display values of the group objects on the required schedule.
+Besides the value of the group object knxmon also maintains data on the last H/W address which issued a GroupValueWrite.
+Since knxmon does not write any data to the eib/knx bus it does not have an APN.
 ### knxtrace
 ===
+knxtrace is a message tracer for the eib/knx bus. It receives all messages coming through ***knxbackbone*** and writes these messages, depending on the command line parameters on startup, to one of many possible locations and in one of many different formats.  
+Have a look to the source code in order to figure out the various formats supported.  
+knxtrace makes up nice little long-term tracer for any eib/knx buss application.
 ### sendbit
 ===
-sendbit is used for sending a DPT 1.xxx value to some arbitrary receiver (sendbit -s <SENDER ADDRESS> -r <RECEIVING GROUP> -v <VALUE; 0 or
+sendbit is used for sending a DPT 1.xxx value to some arbitrary receiver (sendbit -s &lt;SENDER ADDRESS&gt; -r &lt;RECEIVING GROUP&gt; -v &lt;VALUE&gt; 0 or
 1>)
 ### sendfloat
 ===
-sendfloat is used for sending a DPT 9.xxx value to some arbitrary receiver (sendfloat -s ... -r ... -v <VALUE>)
+sendfloat is used for sending a DPT 9.xxx value (half-precision float; 2 byte float) to some arbitrary receiver (sendfloat -s &lt;SENDER ADDRESS&gt; -r &lt;RECEIVING GROUP&gt; -v &lt;VALUE&gt;)
 ### hdlpellet
 ===
 hdlpellet is my current - VERY SIMPLE - implementation of handling a pellet stove.
