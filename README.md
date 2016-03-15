@@ -3,7 +3,7 @@
 README ME - UNDERSTAND ME !!!
 =============================
 
-THIS IS ONLY PROFF OF CONCEPT AND DEMO SOFTWARE WHICH IS NOT SUITABLE FOR A REAL WORLD SYSTEM.
+THIS IS ONLY PROOF OF CONCEPT AND DEMO SOFTWARE WHICH IS NOT SUITABLE FOR A REAL WORLD SYSTEM.
 
 Revision History
 
@@ -58,7 +58,7 @@ Go to the folder where everything has landed, and - in there - create (and chang
 
 $ mkdir build
 $ cd build
-$ make ..
+$ cmake ..
 $ make -j4
 
 Install the files to the /usr/bin and /usr/lib directory (nothing should interefer with any of your other stuff):
