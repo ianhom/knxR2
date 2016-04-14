@@ -118,6 +118,7 @@ int	main( int argc, char *argv[]) {
 	unsigned	char	*sndData ;
 	int	cycleCounter ;
 	int	sndConfirmed	=	0 ;
+	int	sending	=	0 ;
 	int	sndTimeout	=	0 ;
 	knxOpMode	opMode	=	opModeMaster ;
 	/**
@@ -275,7 +276,6 @@ int	main( int argc, char *argv[]) {
 							msgRcv.apn	=	myAPN ;
 							msgRcv.control	=	buf ;
 							msgRcv.frameType	=	eibPollDataFrame ;
-							_eibPutReceive( myEIB, &msgRcv) ;
 						/**
 						 *  check for L_DATA.confirm frame
 						 */
@@ -285,6 +285,7 @@ int	main( int argc, char *argv[]) {
 							msgRcv.frameType	=	eibDataConfirmFrame ;
 							_eibPutReceive( myEIB, &msgRcv) ;
 							sndConfirmed	=	1 ;
+							knxLog( myKnxLogger, progName, "received positive confirm") ;
 						/**
 						 *  check for L_DATA.confirm frame
 						 */
@@ -294,8 +295,9 @@ int	main( int argc, char *argv[]) {
 							msgRcv.frameType	=	eibDataConfirmFrame ;
 							_eibPutReceive( myEIB, &msgRcv) ;
 							sndConfirmed	=	1 ;
+							knxLog( myKnxLogger, progName, "received negative confirm") ;
 						/**
-						 *  check for TPUART.StateIndication frame
+						 *  check for L_DATA.confirm frame
 						 */
 						} else if ( ( buf & 0x07) == 0x07) {
 							msgRcv.apn	=	myAPN ;
@@ -361,9 +363,12 @@ int	main( int argc, char *argv[]) {
 				rcvdBytes	=	RS232_PollComport(cport_nr, (unsigned char *) &buf, 1) ;
 			}
 			/**
-			 * new we check the send queue and put on the real bus what's needed
+			 * IF there's a message to send
 			 */
 			if (( msgToSnd = eibReceive( myEIB, &msgBuf)) != NULL && debugLevel >= 0) {
+				/**
+				 * IF this message is not coming from my own port
+				 */
 				if ( msgToSnd->apn != myAPN && sndConfirmed == 1) {
 					sndMode	=	sending_control ;
 				 	msgToSnd->checksum	=	0x00 ;
@@ -372,9 +377,10 @@ int	main( int argc, char *argv[]) {
 						switch ( sndMode) {
 						case	sending_control	:
 							_debug( 1, progName, "sending control") ;
+							sndConfirmed	=	0 ;
 							bufp	=	0x80 + sendingByte ;
 							buf	=	msgToSnd->control ;
-				 			msgToSnd->checksum	^=	buf ;
+					 		msgToSnd->checksum	^=	buf ;
 							sndMode	=	sending_hw_adr ;
 							sentLength	=	0 ;
 							break ;
@@ -440,9 +446,11 @@ int	main( int argc, char *argv[]) {
 //					dumpMsg( "Sending Message...:\n", msgToSnd) ;
 					sndTimeout	=	0 ;
 				} else if ( sndConfirmed == 0) {
+					knxLog( myKnxLogger, progName, "waiting for confirm") ;
 					sndTimeout++ ;
 					if ( sndTimeout > 10) {
 						sndConfirmed	=	1 ;
+						knxLog( myKnxLogger, progName, "timeout waiting for confirm") ;
 					}
 				} else {
 //					sleep( 1) ;

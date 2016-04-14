@@ -61,7 +61,7 @@ knxLogHdl	*knxLogOpen( int _flags) {
 	this->flags	=	_flags ;
 	this->semKnxLogKey	=	SEM_KNXLOG_KEY ;
 	/**
-	 * create the semaphore for the receive queue
+	 * create the semaphore for the log-file
 	 */
 	if (( this->semKnxLog = semget( this->semKnxLogKey, 1, this->flags | 0600)) < 0) {
 		if (( this->semKnxLog = semget( this->semKnxLogKey, 1, IPC_CREAT | 0600)) < 0) {
@@ -129,5 +129,7 @@ void	knxLog( knxLogHdl *this, char *_progName, char *_msg, ...) {
 	if (( file = fopen( "/var/log/knx.log", "a+")) != NULL) {
 		fprintf( file, "%s:[%s] %s\n", cTime, _progName, buffer) ;
 		fclose( file) ;
+	} else {
+		printf( "can't open logfile ... \n") ;
 	}
 }

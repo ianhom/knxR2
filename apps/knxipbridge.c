@@ -76,7 +76,7 @@ extern	void	help() ;
 
 char	progName[64] ;
 int	debugLevel	=	0 ;
-knxLogHdl	*myKnxLogger ;
+knxLogHdl	*myKnxLogger	=	NULL ;
 ipbridgeMode	myMode	=	eibClient ;
 /**
  *
@@ -146,12 +146,16 @@ int	main( int argc, char *argv[]) {
 	/**
 	 *
 	 */
+	_debug( 0, progName, "starting up ...") ;
 	myKnxLogger	=	knxLogOpen( 0) ;
 	knxLog( myKnxLogger, progName, "%d: starting up ...", ownPID) ;
 	/**
-	 *
+	 * IF no "servername" is provided, we ARE the server
+	 * ELSE
+	 *	we will contact the server named "serverName"
 	 */
 	if ( strlen( serverName) == 0) {
+	_debug( 0, progName, "starting up ...") ;
 		knxLog( myKnxLogger, progName, "%d: in server mode", ownPID) ;
 		myMode	=	eibServer ;
 		rootSockfd	=	socket( AF_INET, SOCK_STREAM, 0) ;
@@ -276,6 +280,7 @@ void	hdlSocket( int queueKey, int workSockfd) {
 				_debug( 1, progName, "got message through receive-queue (apn: %d), will forward to socket",
 								 msgToSnd->apn) ;
 				sndCount	=	write( workSockfd, msgToSnd, KNX_MSG_SIZE) ;
+				_debug( 1, progName, "wrote %d to socket", sndCount) ;
 				if ( sndCount <= 0) {
 					_debug( 11, progName, "could not send data through socket; receiver might be dead");
 				}
@@ -293,6 +298,7 @@ void	hdlSocket( int queueKey, int workSockfd) {
 				msgBuf.apn	=	myAPN ;
 				_eibPutReceive( myEIB, &msgBuf) ;
 			} else if ( rcvCount == 1) {
+				_debug( 1, progName, "received single byte, will close socket") ;
 				debugLevel	=	-1 ;
 			} else {
 				_debug( 1, progName, "Invalid packet received");

@@ -1,3 +1,24 @@
+/**
+ * Copyright (c) 2015, 2016 wimtecc, Karl-Heinz Welter
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
 /*
  *
  * knxtrace.c
@@ -23,6 +44,7 @@
  * Date		Rev.	Who	what
  * -----------------------------------------------------------------------------
  * 2016-01-13	PA1	khw	inception;
+ * 2016-04-07	PA2	khw	included logging to MySQL database;
  *
  */
 #include	<stdio.h>
@@ -33,9 +55,10 @@
 #include	<math.h>
 #include	<getopt.h>
 #include	<sys/types.h>
-#include	<sys/ipc.h> 
-#include	<sys/shm.h> 
+#include	<sys/ipc.h>
+#include	<sys/shm.h>
 #include	<sys/msg.h>
+#include	<mysql.h>
 
 #include	"debug.h"
 #include	"knxlog.h"
@@ -58,9 +81,9 @@ extern	void	logDisas( eibHdl *, knxMsg *) ;
 extern	void	logBin( eibHdl *, knxMsg *) ;
 extern	void	logHex( eibHdl *, knxMsg *) ;
 extern	void	logCtrl( eibHdl *, knxMsg *, char *txt) ;
+extern	void	logDb( eibHdl *, knxMsg *, int *, node *) ;
 
 char	progName[64] ;
-int	debugLevel	=	0 ;
 knxLogHdl	*myKnxLogger ;
 
 extern	void	cbOpenP2P( eibHdl *, knxMsg *) ;
@@ -110,6 +133,7 @@ typedef	enum	modeTrace	{
 	,	KNX_TRC_LOG_BIN	=	2
 	,	KNX_TRC_LOG_HEX	=	3
 	,	KNX_TRC_HANDLE	=	4
+	,	KNX_TRC_LOG_DB	=	5
 	}	modeTrace ;
 
 int	ownAddr		=	0xfff0 ;
@@ -117,6 +141,10 @@ int	progMode	=	1 ;
 int	connectedTo	=	0 ;
 int	myTraceMode	=	KNX_TRC_DISAS ;
 char	myTraceFileName[128] ;
+/**
+ * variables related to MySQL database connection
+ */
+MYSQL	*mySql ;
 
 int	main( int argc, char *argv[]) {
 		eibHdl	*myEIB ;
@@ -144,6 +172,43 @@ int	main( int argc, char *argv[]) {
 			knxMsg	myMsgBuf ;
 			knxMsg	*myMsg ;
 	unsigned	char	*cp ;
+	/**
+	 * define shared memory segment #0: COM Table
+	 *	this segment holds information about the sizes of the other tables
+ 	 */
+		key_t	shmCOMKey	=	SHM_COM_KEY ;
+		int	shmCOMFlg	=	IPC_CREAT | 0666 ;
+		int	shmCOMId ;
+		int	shmCOMSize	=	256 ;
+		int	*sizeTable ;
+	/**
+	 * define shared memory segment #1: OPC Table with buffer
+	 *	this segment holds the structure defined in nodedata.h
+ 	 */
+		key_t	shmOPCKey	=	SHM_OPC_KEY ;
+		int	shmOPCFlg	=	IPC_CREAT | 0666 ;
+		int	shmOPCId ;
+		int	shmOPCSize ;
+		node	*data ;
+	/**
+	 * define shared memory segment #2: KNX Table with buffer
+	 *	this segment holds the KNX table defined in nodedata.h
+ 	 */
+		key_t	shmKNXKey	=	SHM_KNX_KEY ;
+		int	shmKNXFlg	=	IPC_CREAT | 0666 ;
+		int	shmKNXId ;
+		int	shmKNXSize	=	65536 * sizeof( float) ;
+		float	*floats ;
+		int	*ints ;
+	/**
+	 * define shared memory segment #3: CRF Table with buffer
+	 *	this segment holds the cross-reference-table
+ 	 */
+		key_t	shmCRFKey	=	SHM_CRF_KEY ;
+		int	shmCRFFlg	=	IPC_CREAT | 0666 ;
+		int	shmCRFId ;
+		int	shmCRFSize	=	65536 * sizeof( int) ;
+		int	*crf ;
 	/**
 	 *
 	 */
@@ -178,6 +243,53 @@ int	main( int argc, char *argv[]) {
 			break ;
 		}
 	}
+	switch ( myTraceMode) {
+	case	KNX_TRC_DISAS	:
+		break ;
+	case	KNX_TRC_LOG_BIN	:
+		break ;
+	case	KNX_TRC_LOG_HEX	:
+		break ;
+	case	KNX_TRC_HANDLE	:
+		break ;
+	case	KNX_TRC_LOG_DB	:
+		if (( mySql = mysql_init( NULL)) == NULL) {
+			_debug( 0, progName, "could not connect to MySQL Server") ;
+			_debug( 0, progName, "Exiting with -1");
+			exit( -1) ;
+		}
+		if ( mysql_real_connect( mySql, "localhost", "abc", "cba", "knxLog", 0, NULL, 0) == NULL) {
+			_debug( 0, progName, "mysql error := '%s'", mysql_error( mySql)) ;
+			_debug( 0, progName, "Exiting with -2");
+			exit( -2) ;
+		}
+		break ;
+	default	:
+		break ;
+	}
+	/**
+	 * get and attach the shared memory for COMtable
+	 */
+	_debug( 1, progName, "trying to obtain shared memory COMtable ...") ;
+	if (( shmCOMId = shmget( shmCOMKey, shmCOMSize, 0600)) < 0) {
+		_debug( 0, progName, "shmget failed for COMtable");
+		_debug( 0, progName, "Exiting with -1");
+		exit( -1) ;
+	}
+	_debug( 1, progName, "trying to attach shared memory for COMtable") ;
+	if (( sizeTable = (int *) shmat( shmCOMId, NULL, 0)) == (int *) -1) {
+		_debug( 0, progName, "shmat failed for COMtable");
+		_debug( 0, progName, "Exiting with -1");
+		exit( -1) ;
+	}
+	shmCOMSize	=	sizeTable[ SIZE_COM_TABLE] ;
+	shmOPCSize	=	sizeTable[ SIZE_OPC_TABLE] ;
+	shmKNXSize	=	sizeTable[ SIZE_KNX_TABLE] ;
+	shmCRFSize	=	sizeTable[ SIZE_CRF_TABLE] ;
+	/**
+	 *
+	 */
+#include	"_shmblock.c"
 	/**
 	 *
 	 */
@@ -206,6 +318,9 @@ int	main( int argc, char *argv[]) {
 						break ;
 					case	KNX_TRC_HANDLE	:
 						hdlMsg( myEIB, myMsg) ;
+						break ;
+					case	KNX_TRC_LOG_DB	:
+						logDb( myEIB, myMsg, crf, data) ;
 						break ;
 					default	:
 						break ;
@@ -275,22 +390,6 @@ int	main( int argc, char *argv[]) {
 						break ;
 					}
 					break ;
-				case	eibDataConfirmFrame	:
-					switch ( myTraceMode) {
-					case	KNX_TRC_DISAS	:
-						break ;
-					case	KNX_TRC_LOG_BIN	:
-						break ;
-					case	KNX_TRC_LOG_HEX	:
-						logCtrl( myEIB, myMsg, "::eibDataConfirmFrame") ;
-						break ;
-					case	KNX_TRC_HANDLE	:
-//						hdlMsg( myEIB, myMsg) ;
-						break ;
-					default	:
-						break ;
-					}
-					break ;
 				case	eibOtherFrame	:
 					switch ( myTraceMode) {
 					case	KNX_TRC_DISAS	:
@@ -299,6 +398,22 @@ int	main( int argc, char *argv[]) {
 						break ;
 					case	KNX_TRC_LOG_HEX	:
 						logCtrl( myEIB, myMsg, "::eibOtherFrame") ;
+						break ;
+					case	KNX_TRC_HANDLE	:
+//						hdlMsg( myEIB, myMsg) ;
+						break ;
+					default	:
+						break ;
+					}
+					break ;
+				case	eibDataConfirmFrame	:
+					switch ( myTraceMode) {
+					case	KNX_TRC_DISAS	:
+						break ;
+					case	KNX_TRC_LOG_BIN	:
+						break ;
+					case	KNX_TRC_LOG_HEX	:
+						logCtrl( myEIB, myMsg, "::eibDataConfirmFrame") ;
 						break ;
 					case	KNX_TRC_HANDLE	:
 //						hdlMsg( myEIB, myMsg) ;
@@ -399,6 +514,64 @@ void	logDisas( eibHdl *_myEIB, knxMsg *_msg) {
 		}
 	}
 }
+
+void	logDb( eibHdl *_myEIB, knxMsg *_msg, int *_crf, node *_data) {
+	node	*actData ;
+	time_t		t ;
+	struct	tm	tm ;
+	char		cTime[64] ;
+	char	value[33] ;
+	char	mySqlQuery[256] ;
+	FILE	*traceFile ;
+	int	i, len ;
+			MYSQL_RES	*result ;
+			MYSQL_ROW	row ;
+	/**
+	 *
+	 */
+	if ( _msg->apn != 0 && _crf[ _msg->rcvAddr] != 0 && ( ( _msg->control & 0x20) == 0x20)) {
+		actData	=	&_data[ _crf[ _msg->rcvAddr]] ;
+		switch ( actData->type) {
+		case	dtBit	:
+			_debug( 1, progName, "Assigning BIT") ;
+			sprintf( value, "%d", _msg->mtext[1] & 0x01) ;
+			break ;
+		case	dtFloat2	:
+			_debug( 1, progName, "Assigning HALF-FLOAT") ;
+			sprintf( value, "%5.2f", hfbtf( &_msg->mtext[2])) ;
+			break ;
+		case	dtDateTime	:
+			_debug( 1, progName, "Assigning HALF-FLOAT") ;
+			sprintf( value, "%02d:%02d:%02d",
+						_msg->mtext[2] & 0x1f,
+						_msg->mtext[3] & 0x3f,
+						_msg->mtext[4] & 0x3f
+						) ;
+			break ;
+		default	:
+			sprintf( value, "unkonw datatype") ;
+			break ;
+		}
+		sprintf( mySqlQuery, "INSERT INTO log( GroupObjectId, Name, DataType, Value) VALUES( %d, '%s', %d, '%s');",
+				_msg->rcvAddr,
+				actData->name,
+				actData->type,
+				value
+			) ;
+//		printf( "%s\n", mySqlQuery) ;
+		if ( mysql_query( mySql, mySqlQuery)) {
+			_debug( 0, progName, "mysql error := '%s'", mysql_error( mySql)) ;
+			_debug( 0, progName, "Exiting with -3");
+			exit( -3) ;
+		}
+		result  =       mysql_store_result( mySql) ;
+		mysql_free_result( result) ;
+	} else {
+//		printf( "APN ...... : %d \n", _msg->apn) ;
+//		printf( "rcvrAdr .. : %d \n", _msg->rcvAddr) ;
+	}
+}
+
 void	logBin( eibHdl *_myEIB, knxMsg *_msg) {
 	time_t		t ;
 	struct	tm	tm ;

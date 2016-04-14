@@ -9,9 +9,10 @@ THIS IS ONLY PROOF OF CONCEPT AND DEMO SOFTWARE WHICH IS NOT SUITABLE FOR A REAL
 ## Revision History
 ===
 
- Date      | Version | Features/Changes                                        
- --------- | ------- | --------------------------------------------------------
- 2016-03-1 | PA5     | Signficant changes to the code structure; Migrated to cmake ( at least a humble first step);
+ Date       | Version | Features/Changes                                        
+ ---------- | ------- | --------------------------------------------------------
+ 2016-03-15 | PA5     | Signficant changes to the code structure; Migrated to cmake ( at least a humble first step);
+ 2016-04-14 | PA6     | Added tracing mode=5 to log group object values to MySQL database; some otehr minor changes;
 
 
 ## Current Issues 
@@ -82,7 +83,7 @@ and edit, given root privilidges, the baos configuration file as needed.
 This toolset was developed in order to facilitate the development and testing of scripts which run my own home automation, based on KNX bus. As I'm primarily running Mac OS, at least as long as I don't have to program KNX devices with ETS4, the natural choice became Mac OS for running this toolset. On the other hand there's the need to hook up to some real H/W, which in my case comes down to a Raspberry Pi extended with a Busware TPUART interface (which I can highly recommend).  
 Using any of the data from a WebBrowser was not a goal in the beginning, but it might become one shortly.  
 This shall be based on WebSockets, as the humble first rudimentary implementation - not really tested - indicates.
-Everything will compile on Mac OS (using __MACH__ pre-compiler setting) and Raspberry Pi (without __MACH__pre-compiler setting).
+Everything will compile on Mac OS (using __MACH__ pre-compiler setting) and Raspberry Pi (without __MACH__ pre-compiler setting).
 Nothing else is planned to be supported!
 
 Some of the provided files stem from a former tryout and will not work for now!
@@ -151,6 +152,15 @@ Since knxmon does not write any data to the eib/knx bus it does not have an APN.
 knxtrace is a message tracer for the eib/knx bus. It receives all messages coming through ***knxbackbone*** and writes these messages, depending on the command line parameters on startup, to one of many possible locations and in one of many different formats.  
 Have a look to the source code in order to figure out the various formats supported.  
 knxtrace makes up nice little long-term tracer for any eib/knx buss application.
+
+2016-04-14: knxtrace has just experienced another upgrade, i.e. logging data to MySQL database is now possible (-m 5). Together with the  small webserver, which will be uploaded to github in a separate project soon, it allows for graphs helpful for analyzing the system. Example give here is our solar collector and attached water tank and heating buffer:
+
+![graphSolar](samples/GraphSolar_720x480-001_480x320.php.png)
+
+A larger version is accessible [here](samples/GraphSolar_720x480-001.php.png).
+
+Ok, colors aren't really that well selected as of now, this - however - is up to everybodaies choice anyway.
+
 ### sendbit
 ===
 sendbit is used for sending a DPT 1.xxx value to some arbitrary receiver (sendbit -s &lt;SENDER ADDRESS&gt; -r &lt;RECEIVING GROUP&gt; -v &lt;VALUE&gt; 0 or

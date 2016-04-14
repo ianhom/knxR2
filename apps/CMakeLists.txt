@@ -27,7 +27,7 @@ target_link_libraries ( knxipbridge LINK_PUBLIC m eibknxlib)
 target_link_libraries ( knxwebbridge LINK_PUBLIC m crypto eibknxlib)
 
 target_link_libraries ( knxmon LINK_PUBLIC m xml2 eibknxlib ${MYSQL_LIBRARIES})
-target_link_libraries ( knxtrace LINK_PUBLIC m eibknxlib)
+target_link_libraries ( knxtrace LINK_PUBLIC m eibknxlib ${MYSQL_LIBRARIES})
 target_link_libraries ( knxprogadr LINK_PUBLIC m eibknxlib)
 target_link_libraries ( knxsim LINK_PUBLIC m eibknxlib)
 
@@ -51,4 +51,5 @@ install( TARGETS hdlpellet RUNTIME DESTINATION /usr/bin LIBRARY DESTINATION /usr
 install( TARGETS hdlheatpump RUNTIME DESTINATION /usr/bin LIBRARY DESTINATION /usr/lib PERMISSIONS SETUID)
 install( TARGETS hdlheating RUNTIME DESTINATION /usr/bin LIBRARY DESTINATION /usr/lib PERMISSIONS SETUID)
 install( TARGETS hdlsolar RUNTIME DESTINATION /usr/bin LIBRARY DESTINATION /usr/lib PERMISSIONS SETUID)
-
+install( TARGETS sendbit RUNTIME DESTINATION /usr/bin LIBRARY DESTINATION /usr/lib PERMISSIONS SETUID)
+install( TARGETS sendfloat RUNTIME DESTINATION /usr/bin LIBRARY DESTINATION /usr/lib PERMISSIONS SETUID)

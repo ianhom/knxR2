@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2015 wimtecc, Karl-Heinz Welter
+ * Copyright (c) 2015, 2016 wimtecc, Karl-Heinz Welter
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -31,6 +31,7 @@
  * date		rev.	who	what
  * ----------------------------------------------------------------------------
  * 2015-11-20	PA1	userId	inception;
+ * 2016-04-04	PA1	userId	inception;
  *
  */
 #include	<stdio.h>

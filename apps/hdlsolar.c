@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2015 wimtecc, Karl-Heinz Welter
+ * Copyright (c) 2015, 2016 wimtecc, Karl-Heinz Welter
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -31,6 +31,7 @@
  * ----------------------------------------------------------------------------
  * 2015-11-20	PA1	khw	inception;
  * 2016-03-04	PA2	khw	adapted to latest changes;
+ * 2016-03-17	PA3	khw	added minimum collector temperature;
  *
  */
 #include	<stdio.h>
@@ -40,9 +41,9 @@
 #include	<stdlib.h>
 #include	<time.h>
 #include	<sys/types.h>
-#include	<sys/ipc.h> 
-#include	<sys/shm.h> 
-#include	<sys/msg.h> 
+#include	<sys/ipc.h>
+#include	<sys/shm.h>
+#include	<sys/msg.h>
 
 #include	"eib.h"
 #include	"debug.h"
@@ -57,10 +58,14 @@ typedef	enum	modeSolar	{
 		,	MODE_BUFFER	=	2
 	}	modeSolar ;
 
-#define	TEMP_WW_ON	50
-#define	TEMP_WW_OFF	58
-#define	TEMP_HB_ON	30
-#define	TEMP_HB_OFF	35
+#define	TEMP_COL_MIN	40
+#define	TEMP_WW_OFF	60
+#define	TEMP_HB_OFF	60
+
+#define	MISCHER_SOLAR_PUFFER	0
+#define	MISCHER_SOLAR_WASSER	1
+#define	PUMPE_SOLAR_AUS		0
+#define	PUMPE_SOLAR_EIN		1
 
 extern	void	setModeStopped( eibHdl *, node *) ;
 extern	void	setModeWater( eibHdl *, node *) ;
@@ -92,9 +97,7 @@ int	main( int argc, char *argv[]) {
 	/**
 	 * define application specific variables
 	 */
-		float	tempWWOn	=	TEMP_WW_ON ;	// low temp. when water heating needs to start
 		float	tempWWOff	=	TEMP_WW_OFF ;	// high temp. when water heating can stop
-		float	tempHBOn	=	TEMP_HB_ON ;	// low temp. when buffer heating needs to start
 		float	tempHBOff	=	TEMP_HB_OFF ;	// high temp. when buffer heating can stop
 		float	diffTempCollHB ;
 		float	diffTempCollWW ;
@@ -102,13 +105,16 @@ int	main( int argc, char *argv[]) {
 		float	tempHB ;
 		float	tempCol ;
 		int	lastMode	=	MODE_INVALID ;
-		int	mode	=	MODE_STOPPED ;
+		int	mode	=	MODE_INVALID ;
 		int	changeMode ;
 		int	hdlWater	=	0 ;
 		int	hdlBuffer	=	0 ;
 		int	startupDelay	=	5 ;
+		int	tempWWcf ;				// point to node["TempWWu"], WarmWater
 		int	tempWWu ;				// point to node["TempWWu"], WarmWater
+		int	tempWWm ;				// point to node["TempWWu"], WarmWater
 		int	tempHBu ;				// point to node["TempHBu"], HeatingBuffer
+		int	tempHBm ;				// point to node["TempHBu"], HeatingBuffer
 		int	tempCol1 ;				// point to node["TempCol1"], SolarCollector
 		int	queueKey	=	10031 ;
 		time_t	lastOffTime	=	0L ;
@@ -154,7 +160,7 @@ int	main( int argc, char *argv[]) {
 	/**
 	 * get command line options
 	 */
-	while (( opt = getopt( argc, argv, "D:Q:d:wb?")) != -1) {
+	while (( opt = getopt( argc, argv, "D:Q:d:m:wb?")) != -1) {
 		switch ( opt) {
 		/**
 		 * general options
@@ -173,6 +179,9 @@ int	main( int argc, char *argv[]) {
 			break ;
 		case    'd'     :
 			startupDelay    =       atoi( optarg) ;
+			break ;
+		case    'm'     :
+			mode    =       atoi( optarg) ;
 			break ;
 		case    'w'     :
 			hdlWater        =       1 ;
@@ -218,26 +227,32 @@ int	main( int argc, char *argv[]) {
 	 */
 	pumpSolar	=	getEntry( data, lastDataIndexC, "PumpSolar") ;
 	valveSolar	=	getEntry( data, lastDataIndexC, "ValveSolar") ;
+	tempWWcf		=	getEntry( data, lastDataIndexC, "TempCol2") ;
 	tempWWu		=	getEntry( data, lastDataIndexC, "TempWWu") ;
 	tempHBu		=	getEntry( data, lastDataIndexC, "TempPSu") ;
+	tempHBm		=	getEntry( data, lastDataIndexC, "TempPSm") ;
 	tempCol1	=	getEntry( data, lastDataIndexC, "TempCol1") ;
 	_debug( 1, progName, "pumpSolar at index ...... : %d", pumpSolar) ;
 	_debug( 1, progName, "valveSolar at index ..... : %d", valveSolar) ;
+	_debug( 1, progName, "tempWWcf at index ....... : %d", tempWWcf) ;
 	_debug( 1, progName, "tempWWu at index ........ : %d", tempWWu) ;
 	_debug( 1, progName, "tempHBu at index ........ : %d", tempHBu) ;
+	_debug( 1, progName, "tempHBm at index ........ : %d", tempHBm) ;
 	_debug( 1, progName, "tempCol1 at index ....... : %d", tempCol1) ;
 	/**
 	 * try to determine the current mode of the solar-module
 	 */
 	_debug( 1, progName, "trying to setermine current status") ;
-	if ( data[pumpSolar].val.i == 1) {
-		if ( data[valveSolar].val.i == VALVE_SOLAR_WW) {
-			mode	=	MODE_WATER ;
+	if ( mode == MODE_INVALID) {
+		if ( data[pumpSolar].val.i == 1) {
+			if ( data[valveSolar].val.i == VALVE_SOLAR_WW) {
+				mode	=	MODE_WATER ;
+			} else {
+				mode	=	MODE_BUFFER ;
+			}
 		} else {
-			mode	=	MODE_BUFFER ;
+			mode	=	MODE_STOPPED ;
 		}
-	} else {
-		mode	=	MODE_STOPPED ;
 	}
 	currentMode	=	mode ;
 	_debug( 1, progName, "current status ... %0d:'%s'", currentMode, modeText[currentMode]) ;
@@ -258,40 +273,38 @@ int	main( int argc, char *argv[]) {
 		changeMode	=	1 ;
 		lastMode	=	mode ;
 		tempWW	=	data[tempWWu].val.f ;
-		tempHB	=	data[tempHBu].val.f ;
-		tempCol	=	data[tempCol1].val.f ;
-		diffTempCollWW	=	data[tempCol1].val.f - data[tempWWu].val.f ;
-		diffTempCollHB	=	data[tempCol1].val.f - data[tempHBu].val.f ;
+		tempWW	=	data[tempWWcf].val.f ;
+		tempHB	=	( data[tempHBu].val.f + data[tempHBm].val.f) / 2.0 ;
+		tempCol	=	data[tempCol1].val.f * 1.5 ;
+		diffTempCollWW	=	tempCol - tempWW ;
+		diffTempCollHB	=	tempCol - tempHB ;
 		_debug( 1, progName, "current mode .................. : %d:'%s'", currentMode, modeText[currentMode]) ;
 		_debug( 1, progName, "temp. tank, actual ............ : %5.1f", tempWW) ;
 		_debug( 1, progName, "temp. buffer, actual .......... : %5.1f", tempHB) ;
 		_debug( 1, progName, "temp. solCol1, actual ......... : %5.1f %5d", tempCol, data[tempCol1].knxGroupAddr) ;
-		_debug( 1, progName, "temp. diff. tank, actual ...... : %5.1f", diffTempCollWW, tempWWOn, tempWWOff) ;
-		_debug( 1, progName, "temp. diff. buffer, actual .... : %5.1f", diffTempCollHB, tempWWOn, tempWWOff) ;
+		_debug( 1, progName, "temp. diff. tank, actual ...... : %5.1f (max: %5.1f)", diffTempCollWW, tempWWOff) ;
+		_debug( 1, progName, "temp. diff. buffer, actual .... : %5.1f (max: %5.1f)", diffTempCollHB, tempHBOff) ;
 		while ( changeMode) {
 			changeMode	=	0 ;
 			switch( mode) {
 			case	MODE_STOPPED	:
-				if ( diffTempCollWW >= 10.0 && tempWW < tempWWOff) {
+				if ( diffTempCollWW >= 30.0 && tempWW < tempWWOff && tempCol >= TEMP_COL_MIN) {
 					mode	=	MODE_WATER ;
-				} else if ( diffTempCollHB >= 10.0) {
+				} else if ( diffTempCollHB >= 10.0 && tempHB < tempHBOff && tempCol >=TEMP_COL_MIN) {
 					mode	=	MODE_BUFFER ;
 				} else {
 					mode	=	MODE_STOPPED ;
 				}
 				break ;
 			case	MODE_WATER	:
-				if ( diffTempCollWW <= 5.0 || tempWW >= tempWWOff) {
+				if ( diffTempCollWW <= 20.0 || tempWW >= tempWWOff || tempCol < TEMP_COL_MIN) {
 					changeMode	=	1 ;
 					mode	=	MODE_STOPPED ;
 				} else {
 				}
 				break ;
 			case	MODE_BUFFER	:
-				if ( diffTempCollWW >= 10.0 && tempWW < tempWWOn) {
-					mode	=	MODE_STOPPED ;
-					changeMode	=	1 ;
-				} else if ( data[valveSolar].val.i == VALVE_SOLAR_HB && diffTempCollHB <= 5.0) {
+				if ( diffTempCollHB <= 5.0 || tempHB >= tempHBOff || tempCol < TEMP_COL_MIN) {
 					mode	=	MODE_STOPPED ;
 					changeMode	=	1 ;
 				}
@@ -322,56 +335,59 @@ void	setModeStopped( eibHdl *_myEIB, node *data) {
         int     reset   =       0 ;
         if ( currentMode != MODE_STOPPED) {
                 reset   =       1 ;
-        } else if ( data[pumpSolar].val.i != 0) {
+        } else if ( data[pumpSolar].val.i != PUMPE_SOLAR_AUS) {
                 knxLog( myKnxLogger, progName, "ALERT ... Solar Heating Setting (on/off) is WRONG ...") ;
                 reset   =       1 ;
-        } else if ( data[valveSolar].val.i != VALVE_SOLAR_WW) {
+        } else if ( data[valveSolar].val.i != MISCHER_SOLAR_PUFFER) {
                 knxLog( myKnxLogger, progName, "ALERT ... Solar Heating Setting (valve) is WRONG ...") ;
                 reset   =       1 ;
         }
         if ( reset) {
                 knxLog( myKnxLogger, progName, "Setting mode OFF") ;
-                eibWriteBit( _myEIB, data[pumpSolar].knxGroupAddr, 0, 0) ;
-                eibWriteBit( _myEIB, data[valveSolar].knxGroupAddr, VALVE_SOLAR_WW, 0) ;
+                eibWriteBit( _myEIB, data[pumpSolar].knxGroupAddr, PUMPE_SOLAR_AUS, 0) ;
+		sleep( 1) ;
+                eibWriteBit( _myEIB, data[valveSolar].knxGroupAddr, MISCHER_SOLAR_PUFFER, 0) ;
                 currentMode     =       MODE_STOPPED ;
         }
 }
 
 void	setModeWater( eibHdl *_myEIB, node *data) {
         int     reset   =       0 ;
-        if ( currentMode != MODE_STOPPED) {
+        if ( currentMode != MODE_WATER) {
                 reset   =       1 ;
-        } else if ( data[pumpSolar].val.i != 1) {
+        } else if ( data[pumpSolar].val.i != PUMPE_SOLAR_EIN) {
                 knxLog( myKnxLogger, progName, "ALERT ... Solar Heating Setting (on/off) is WRONG ...") ;
                 reset   =       1 ;
-        } else if ( data[valveSolar].val.i != VALVE_SOLAR_WW) {
+        } else if ( data[valveSolar].val.i != MISCHER_SOLAR_WASSER) {
                 knxLog( myKnxLogger, progName, "ALERT ... Solar Heating Setting (valve) is WRONG ...") ;
                 reset   =       1 ;
         }
         if ( reset) {
                 knxLog( myKnxLogger, progName, "Setting mode OFF") ;
-                eibWriteBit( _myEIB, data[pumpSolar].knxGroupAddr, 1, 0) ;
-                eibWriteBit( _myEIB, data[valveSolar].knxGroupAddr, VALVE_SOLAR_WW, 0) ;
-                currentMode     =       MODE_STOPPED ;
+                eibWriteBit( _myEIB, data[pumpSolar].knxGroupAddr, PUMPE_SOLAR_EIN, 0) ;
+		sleep( 1) ;
+                eibWriteBit( _myEIB, data[valveSolar].knxGroupAddr, MISCHER_SOLAR_WASSER, 0) ;
+                currentMode     =       MODE_WATER ;
         }
 }
 
 void	setModeBuffer( eibHdl *_myEIB, node *data) {
         int     reset   =       0 ;
-        if ( currentMode != MODE_STOPPED) {
+        if ( currentMode != MODE_BUFFER) {
                 reset   =       1 ;
-        } else if ( data[pumpSolar].val.i != 1) {
+        } else if ( data[pumpSolar].val.i != PUMPE_SOLAR_EIN) {
                 knxLog( myKnxLogger, progName, "ALERT ... Solar Heating Setting (on/off) is WRONG ...") ;
                 reset   =       1 ;
-        } else if ( data[valveSolar].val.i != VALVE_SOLAR_HB) {
+        } else if ( data[valveSolar].val.i != MISCHER_SOLAR_PUFFER) {
                 knxLog( myKnxLogger, progName, "ALERT ... Solar Heating Setting (valve) is WRONG ...") ;
                 reset   =       1 ;
         }
         if ( reset) {
                 knxLog( myKnxLogger, progName, "Setting mode OFF") ;
-                eibWriteBit( _myEIB, data[pumpSolar].knxGroupAddr, 1, 0) ;
-                eibWriteBit( _myEIB, data[valveSolar].knxGroupAddr, VALVE_SOLAR_HB, 0) ;
-                currentMode     =       MODE_STOPPED ;
+                eibWriteBit( _myEIB, data[pumpSolar].knxGroupAddr, PUMPE_SOLAR_EIN, 0) ;
+		sleep( 1) ;
+                eibWriteBit( _myEIB, data[valveSolar].knxGroupAddr, MISCHER_SOLAR_PUFFER, 0) ;
+                currentMode     =       MODE_BUFFER ;
         }
 }
 

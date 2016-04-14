@@ -35,6 +35,7 @@
 #ifndef debug_INCLUDED
 #define debug_INCLUDED
 
+extern  int     debugLevel ;
 extern	void	_debug( int, const char *, const char *, ...) ;
 
 #endif

@@ -16,8 +16,8 @@
 
 #define	HEAT_PUMP	64
 
-#define	VALVE_SOLAR_WW	0
-#define	VALVE_SOLAR_HB	1
+#define	VALVE_SOLAR_HB	0
+#define	VALVE_SOLAR_WW	1
 
 #define	VALVE_PS_HB	0
 #define	VALVE_PS_WW	1

@@ -31,7 +31,8 @@
  * ----------------------------------------------------------------------------
  * 2015-11-20	PA1	khw	inception;
  * 2016-01-12	PA2	khw	adapted to new architecture of eib.c;
- * 2016-01-25	PA2	khw	added option for waiting time after startup;
+ * 2016-01-25	PA3	khw	added option for waiting time after startup;
+ * 2016-03-30	PA4	khw	added timing per day;
  *
  */
 #include	<stdio.h>
@@ -63,8 +64,8 @@ typedef	enum	modePS	{
 
 #define	TEMP_WW_ON	53
 #define	TEMP_WW_OFF	58
-#define	TEMP_HB_ON	30
-#define	TEMP_HB_OFF	35
+#define	TEMP_HB_ON	33
+#define	TEMP_HB_OFF	36
 
 extern	void	setModeStopped( eibHdl *, node *) ;
 extern	void	setModeWater( eibHdl *, node *) ;
@@ -90,8 +91,6 @@ int	main( int argc, char *argv[]) {
 		eibHdl	*myEIB ;
 		int	status		=	0 ;
 		int		opt ;
-		time_t	actTime ;
-	struct	tm	*myTime ;
 		char	timeBuffer[64] ;
 	/**
 	 *
@@ -152,6 +151,9 @@ int	main( int argc, char *argv[]) {
 		int	shmCRFId ;
 		int	shmCRFSize	=	65536 * sizeof( int) ;
 		int	*crf ;
+		time_t	actTime ;
+	struct	tm	myTime ;
+		int	timerMode	=	0 ;
 	/**
 	 *
 	 */
@@ -249,6 +251,32 @@ int	main( int argc, char *argv[]) {
 	myEIB	=	eibOpen( 0x1234, 0, queueKey) ;
 	while ( debugLevel >= 0) {
 		/**
+		 *
+		 */
+		actTime	=	time( NULL) ;
+		myTime	=	*localtime( &actTime) ;
+		timerMode	=	0 ;
+		switch ( myTime.tm_wday) {
+		case	6	:		// saturday
+			if ( myTime.tm_hour >= 5 && myTime.tm_hour <= 12) {
+				timerMode	=	1 ;
+			}
+			break ;
+		case	0	:		// sunday
+			if ( myTime.tm_hour >= 7 && myTime.tm_hour <= 12) {
+				timerMode	=	1 ;
+			}
+			break ;
+		default	:			// monday - friday
+			if ( myTime.tm_hour >= 4 && myTime.tm_hour <= 8) {
+				timerMode	=	1 ;
+			} else if ( myTime.tm_hour >= 19 && myTime.tm_hour <= 21) {
+				timerMode	=	1 ;
+			}
+			break ;
+		}
+		_debug( 1, progName, "timer mode .................... : %d", timerMode) ;
+		/**
 		 * dump all input data for this "MES"
 		 */
 		if ( debugLevel > 1) {
@@ -261,6 +289,9 @@ int	main( int argc, char *argv[]) {
 		lastMode	=	mode ;
 		tempWW	=	data[tempWWu].val.f ;
 		tempHB	=	data[tempHBu].val.f ;
+		_debug( 1, progName, "week day (0= sun, ... 6=sat)... : %d", myTime.tm_wday) ;
+		_debug( 1, progName, "hour .......................... : %d", myTime.tm_hour) ;
+		_debug( 1, progName, "timer mode .................... : %d", timerMode) ;
 		_debug( 1, progName, "current mode .................. : %d:'%s'", currentMode, modeText[currentMode]) ;
 		_debug( 1, progName, "temp. warm water, actual ...... : %5.1f ( %5.1f ... %5.1f)", tempWW, tempWWOn, tempWWOff) ;
 		_debug( 1, progName, "temp. buffer, actual .......... : %5.1f ( %5.1f ... %5.1f)", tempHB, tempHBOn, tempHBOff) ;
@@ -268,7 +299,7 @@ int	main( int argc, char *argv[]) {
 			changeMode	=	0 ;
 			switch( mode) {
 			case	MODE_STOPPED	:
-				if ( tempWW <= tempWWOn && hdlWater) {
+				if ( tempWW <= tempWWOn && hdlWater && timerMode == 1) {
 					mode	=	MODE_WATER ;
 				} else if ( tempHB <= tempHBOn && hdlBuffer) {
 					mode	=	MODE_BUFFER ;
@@ -277,7 +308,7 @@ int	main( int argc, char *argv[]) {
 				}
 				break ;
 			case	MODE_WATER	:
-				if ( tempWW >= tempWWOff) {
+				if ( tempWW >= tempWWOff || timerMode == 0) {
 					changeMode	=	1 ;
 					mode	=	MODE_STOPPED ;
 				}
@@ -327,6 +358,7 @@ void	setModeStopped( eibHdl *_myEIB, node *data) {
 	if ( reset) {
 		knxLog( myKnxLogger, progName, "Setting mode OFF") ;
 		eibWriteBit( _myEIB, data[pelletStove].knxGroupAddr, 0, 0) ;
+		sleep( 1) ;
 		eibWriteBit( _myEIB, data[valvePelletStove].knxGroupAddr, VALVE_PS_WW, 0) ;
 		currentMode	=	MODE_STOPPED ;
 	}
@@ -343,6 +375,7 @@ void	setModeWater( eibHdl *_myEIB, node *data) {
 	if ( reset) {
 		knxLog( myKnxLogger, progName, "Setting mode WATER") ;
 		eibWriteBit( _myEIB, data[pelletStove].knxGroupAddr, 1, 0) ;
+		sleep( 1) ;
 		eibWriteBit( _myEIB, data[valvePelletStove].knxGroupAddr, VALVE_PS_WW, 0) ;
 		currentMode	=	MODE_WATER ;
 	}
@@ -359,6 +392,7 @@ void	setModeBuffer( eibHdl *_myEIB, node *data) {
 	if ( reset) {
 		knxLog( myKnxLogger, progName, "Setting mode BUFFER") ;
 		eibWriteBit( _myEIB, data[pelletStove].knxGroupAddr, 1, 0) ;
+		sleep( 1) ;
 		eibWriteBit( _myEIB, data[valvePelletStove].knxGroupAddr, VALVE_PS_HB, 0) ;
 		currentMode	=	MODE_BUFFER ;
 	}

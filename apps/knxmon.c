@@ -39,8 +39,8 @@
 #include	<time.h>
 #include	<math.h>
 #include	<sys/types.h>
-#include	<sys/ipc.h> 
-#include	<sys/shm.h> 
+#include	<sys/ipc.h>
+#include	<sys/shm.h>
 #include	<sys/msg.h>
 #include	<sys/signal.h>
 #include	<mysql.h>
@@ -75,7 +75,6 @@ extern	void	help() ;
  *
  */
 char	progName[64] ;
-int	debugLevel	=	0 ;
 knxLogHdl	*myKnxLogger ;
 /**
  *
@@ -102,7 +101,7 @@ int	main( int argc, char *argv[]) {
 	 *	this segment holds information about the sizes of the other tables
  	 */
 		key_t	shmCOMKey	=	SHM_COM_KEY ;
-		int	shmCOMFlg	=	IPC_CREAT | 0600 ;
+		int	shmCOMFlg	=	IPC_CREAT | 0666 ;
 		int	shmCOMId ;
 		int	shmCOMSize	=	256 ;
 		int	*sizeTable ;
@@ -111,7 +110,7 @@ int	main( int argc, char *argv[]) {
 	 *	this segment holds the structure defined in nodedata.h
  	 */
 		key_t	shmOPCKey	=	SHM_OPC_KEY ;
-		int	shmOPCFlg	=	IPC_CREAT | 0600 ;
+		int	shmOPCFlg	=	IPC_CREAT | 0666 ;
 		int	shmOPCId ;
 		int	shmOPCSize ;
 		node	*data ;
@@ -130,7 +129,7 @@ int	main( int argc, char *argv[]) {
 	 *	this segment holds the cross-reference-table
  	 */
 		key_t	shmCRFKey	=	SHM_CRF_KEY ;
-		int	shmCRFFlg	=	IPC_CREAT | 0600 ;
+		int	shmCRFFlg	=	IPC_CREAT | 0666 ;
 		int	shmCRFId ;
 		int	shmCRFSize	=	65536 * sizeof( int) ;
 		int	*crf ;
@@ -215,36 +214,6 @@ int	main( int argc, char *argv[]) {
 		_debug( 1, "%s ... %d \n", opcData[i].name, opcData[i].knxGroupAddr) ;
 	}
 	/**
-	 * setup the MySQL connection
-	 * fixed:
-	 *	host		=	localhost
-	 *	dbName		=	mas_knx_00000001	mas::KH private::00000001
-	 *	dbUser		=	abc
-	 *	dbPassword	=	cba
-	 */
-	_debug( 1, progName, "MySQL client version: %s", mysql_get_client_info());
-//	if (( mySql = mysql_init( NULL)) == NULL) {
-//		_debug( 0, progName, "could not connect to MySQL Server") ;
-//		_debug( 0, progName, "Exiting with -1");
-//		exit( -1) ;
-//	}
-//	if ( mysql_real_connect( mySql, "localhost", "abc", "cba", "mas_knx_00000001", 0, NULL, 0) == NULL) {
-//		_debug( 0, progName, "mysql error := '%s'", mysql_error( mySql)) ;
-//		_debug( 0, progName, "Exiting with -2");
-//		exit( -2) ;
-//	}
-//	if ( mysql_query( mySql, "SELECT * FROM GroupAddress")) {
-//		_debug( 0, progName, "mysql error := '%s'", mysql_error( mySql)) ;
-//		_debug( 0, progName, "Exiting with -3");
-//		exit( -3) ;
-//	}
-//	result	=	mysql_store_result( mySql) ;
-//	while (( row = mysql_fetch_row( result))) {
-//		_debug( 1, progName, "%s", row[1]) ;
-//	}
-//	mysql_free_result( result) ;
-//	mysql_close( mySql) ;
-	/**
 	 * setup the shared memory for COMtable
 	 */
 	_debug( 10, progName, "shmCOMKey........: %d", shmCOMKey) ;
@@ -293,10 +262,11 @@ int	main( int argc, char *argv[]) {
 	/**
 	 * setup the shared memory for KNXtable
 	 */
+	knxLog( myKnxLogger, progName, "shmKNXKEY := %d", shmKNXKey) ;
 	if ( debugLevel > 0) {
 		_debug( 1, progName, "trying to obtain shared memory KNXtable ...") ;
 	}
-	if (( shmKNXId = shmget( shmKNXKey, shmKNXSize, IPC_CREAT | 0600)) < 0) {
+	if (( shmKNXId = shmget( shmKNXKey, shmKNXSize, IPC_CREAT | 0666)) < 0) {
 		_debug( 0, progName, "shmget failed for KNXtable");
 		exit( -1) ;
 	}

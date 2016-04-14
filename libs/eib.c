@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2015 wimtecc, Karl-Heinz Welter
+ * Copyright (c) 2015, 2016 wimtecc, Karl-Heinz Welter
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -74,7 +74,7 @@ eibHdl	*eibOpen( unsigned int _sndAddr, int flags, key_t _key) {
 	 * create the simulated knx-bus
 	 */
 //	_debug( 1, "eib.c", "trying to attach send message queue ... \n") ;
-	if (( this->shmKnxBusId = shmget ( this->shmKey, KNX_BUS_SIZE, flags | 0600)) < 0) {
+	if (( this->shmKnxBusId = shmget ( this->shmKey, KNX_BUS_SIZE, flags | 0666)) < 0) {
 		_debug( 0, "eib.c", "%s: could not create knxBus shared memory ...\n") ;
 		exit( -1) ;
 	}
@@ -92,7 +92,7 @@ eibHdl	*eibOpen( unsigned int _sndAddr, int flags, key_t _key) {
 	/**
 	 * create the semaphore for the send queue
 	 */
-	if (( this->semKnxBus = semget( this->semKey, 1, flags | 0600)) < 0) {
+	if (( this->semKnxBus = semget( this->semKey, 1, flags | 0666)) < 0) {
 		_debug( 0, "eib.c", "%s: could not create knxBus queue semaphore ...\n") ;
 		exit( -1) ;
 	}
@@ -149,51 +149,6 @@ void	eibSetAddr( eibHdl *this, unsigned int _sndAddr) {
 	this->sndAddr	=	_sndAddr ;
 }
 /**
- * eibSend
- *
- * put an outbound message into the internal queue "to-be-send"
- */
-//void	eibSend( eibHdl *this, knxMsg *msg) {
-//	/**
-//	 * we need to wait for the semaphore
-//	 */
-//	_debug( 1, "eib.c", "waiting for send buffer semaphore\n") ;
-//	this->semKnxBusOp->sem_num		=	0 ;
-//	this->semKnxBusOp->sem_op		=	-1 ;
-//	this->semKnxBusOp->sem_flg	=	SEM_UNDO ;
-//	if( semop ( this->semKnxBus, this->semKnxBusOp, 1) == -1) {
-//		_debug( 0, "eib.c", "Can not perform semaphore operation\n");
-//printf( ".......: %d \n", errno) ;
-//		exit ( EXIT_FAILURE) ;
-//	}
-//	/**
-//	 * put the mesaeg in the queue
-//	 */
-//	_debugl( 1, "eib.c", "%s: putting the message into the send buffer (queue-id := %ld)\n", this->semKnxBus) ;
-//	/**
-//	 * try to receive a message is there is one
-//	 */
-//	memcpy( &this->shmKnxBus->sndMsg[ this->shmKnxBus->writeSndIndex], msg, KNX_MSG_SIZE) ;
-//	this->shmKnxBus->writeSndIndex	+=	1 ;
-//	/**
-//	 * if we are at the end of the buffer
-//	 *	reset to beginning
-//	 */
-//	if ( this->shmKnxBus->writeSndIndex >= EIB_SND_BUFFER_SIZE) {
-//		this->shmKnxBus->writeSndIndex	=	0 ;
-//	}
-//	/**
-//	 * and release the semaphore
-//	 */
-//	_debug( 1, "eib.c", "releasing send buffer semaphore\n") ;
-//	this->semKnxBusOp->sem_op		=	1 ;
-//	this->semKnxBusOp->sem_flg	=	SEM_UNDO ;
-//	if( semop ( this->semKnxBus, this->semKnxBusOp, 1) == -1) {
-//		perror( " semop ") ;
-//		exit ( EXIT_FAILURE) ;
-//	}
-//}
-/**
  * take a knx mesage from the receive queue
  */
 knxMsg	*eibReceive( eibHdl *this, knxMsg *msgBuf) {
@@ -224,9 +179,9 @@ knxMsg	*eibReceive( eibHdl *this, knxMsg *msgBuf) {
 	/**
 	 * try to receive a message is there is one
 	 */
-//printf( "...: read ...: %5d ... write ...: %5d\n", this->readRcvIndex, this->shmKnxBus->writeRcvIndex) ;
 	if (this->readRcvIndex != this->shmKnxBus->writeRcvIndex) {
 		memcpy( msgBuf, &this->shmKnxBus->rcvMsg[ this->readRcvIndex], KNX_MSG_SIZE) ;
+//		printf( "%d>G:...: read ...: %5d ... write ...: %5d\n", msgBuf->apn, this->readRcvIndex, this->shmKnxBus->writeRcvIndex) ;
 		this->readRcvIndex	+=	1 ;
 		/**
 		 * if we are at the end of the buffer
@@ -457,6 +412,7 @@ void	_eibPutReceive( eibHdl *this, knxMsg *msg) {
 	/**
 	 * put the message in the queue
 	 */
+//printf( "%d>P:...: read ...: %5d ... write ...: %5d %5d %5d\n", msg->apn, this->readRcvIndex, this->shmKnxBus->writeRcvIndex, msg->sndAddr, msg->rcvAddr) ;
 	memcpy( &this->shmKnxBus->rcvMsg[ this->shmKnxBus->writeRcvIndex], msg, KNX_MSG_SIZE) ;
 	this->shmKnxBus->writeRcvIndex	+=	1 ;
 	/**
@@ -478,68 +434,6 @@ void	_eibPutReceive( eibHdl *this, knxMsg *msg) {
 		exit ( EXIT_FAILURE) ;
 	}
 }
-/**
- * _eibGetSend
- *
- * fetch a message from the internal send buffer
- * this method is exclusively needed by the knxbridge, which actually takes this
- * message "to be send" and puts it onto the physical interface or, using _eibPutReceive,
- * back into the receive queue
- */
-//knxMsg	*_eibGetSend( eibHdl *this, knxMsg *msgBuf) {
-//	knxMsg	*msgRcvd ;
-//	/**
-//	 * we do this in plain priority sequence
-//	 * if there's something in the internal queue waiting to be sent to the real bus
-//	 *	send it immediately back to the receive queue
-//	 * else
-//	 *	increment a sleep timer up to a max value of 3 seconds
-//	 *	and goto sleep
-//	 */
-//	msgRcvd	=	NULL ;
-//	/**
-//	 * we need to wait for the semaphore
-//	 */
-//	this->semKnxBusOp->sem_num		=	0 ;
-//	this->semKnxBusOp->sem_op		=	-1 ;
-//	this->semKnxBusOp->sem_flg	=	SEM_UNDO ;
-//	if( semop ( this->semKnxBus, this->semKnxBusOp, 1) == -1) {
-//		perror( " semop ") ;
-//		exit ( EXIT_FAILURE) ;
-//	}
-//	/**
-//	 * try to receive a message is there is one
-//	 */
-//	if ( this->readSndIndex != this->shmKnxBus->writeSndIndex) {
-//		memcpy( msgBuf, &this->shmKnxBus->sndMsg[ this->readSndIndex], KNX_MSG_SIZE) ;
-//		this->readSndIndex	+=	1 ;
-//		/**
-//		 * if we are at the end of the buffer
-//		 *	reset to beginning
-//		 */
-//		if ( this->readSndIndex >= EIB_SND_BUFFER_SIZE) {
-//			this->readSndIndex	=	0 ;
-//		}
-//		msgRcvd	=	msgBuf ;
-//	}
-//	/**
-//	 * and release the semaphore
-//	 */
-//	this->semKnxBusOp->sem_op		=	1 ;
-//	this->semKnxBusOp->sem_flg	=	SEM_UNDO ;
-//	if( semop ( this->semKnxBus, this->semKnxBusOp, 1) == -1) {
-//		perror( " semop ") ;
-//		exit ( EXIT_FAILURE) ;
-//	}
-//	/**
-//	 *
-//	 */
-//	if ( msgRcvd != NULL) {
-//		msgRcvd->tlc	=	msgRcvd->mtext[0] >> 6 ;
-//		msgRcvd->apci	=	(( msgRcvd->mtext[0] & 0x03) << 2) | (( msgRcvd->mtext[1] & 0xc0) >> 6) ;
-//	}
-//	return( msgRcvd) ;
-//}
 /**
  * hfbtf	- half-float binary to float
  */
@@ -709,4 +603,3 @@ knxMsg	*getIndividualAddrResponseMsg( eibHdl *this, knxMsg *_myMsg, unsigned int
 						// ......10	connectionConfirmPositiv
 	return _myMsg ;
 }
-

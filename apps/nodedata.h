@@ -86,7 +86,7 @@ node	_data[]	=	{
 			,	{	7, "ValeOG05"		,dtBit		,0	,9221	,0	,0	,srcOTHER, 0}
 			,	{	7, "ValeOG06"		,dtBit		,0	,9222	,0	,0	,srcOTHER, 0}
 			,	{	3, "PelletStove"	,dtBit		,0	,9473	,0	,0x02	,srcOTHER, 0}	// off/on
-			,	{	4, "HeatPump"		,dtBit		,0	,9483	,0	,0x04	,srcOTHER, 0}	// off/on
+			,	{	4, "HeatPump"		,dtBit		,0	,9482	,0	,0x04	,srcOTHER, 0}	// off/on
 			} ;
 
 #define	HEAT_PUMP	64
