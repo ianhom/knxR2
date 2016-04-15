@@ -43,7 +43,6 @@
 #include	<sys/shm.h>
 #include	<sys/msg.h>
 #include	<sys/signal.h>
-#include	<mysql.h>
 
 #include	"debug.h"
 #include	"knxlog.h"
@@ -163,12 +162,6 @@ int	main( int argc, char *argv[]) {
 			struct	tm	tm ;
 			int	lastSec	=	0 ;
 			int	lastMin	=	0 ;
-	/**
-	 * variables related to MySQL database connection
-	 */
-			MYSQL	*mySql ;
-			MYSQL_RES	*result ;
-			MYSQL_ROW	row ;
 	/**
 	 *	END OF TEST SECTION
 	 */
