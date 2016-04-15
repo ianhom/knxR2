@@ -12,24 +12,23 @@ THIS IS ONLY PROOF OF CONCEPT AND DEMO SOFTWARE WHICH IS NOT SUITABLE FOR A REAL
  Date       | Version | Features/Changes                                        
  ---------- | ------- | --------------------------------------------------------
  2016-03-15 | PA5     | Signficant changes to the code structure; Migrated to cmake ( at least a humble first step);
- 2016-04-14 | PA6     | Added tracing mode=5 to log group object values to MySQL database; some otehr minor changes;
 
 
-## Current Issues
+## Current Issues 
 ===
 - Too fast sending causes second message to be lost. A nasty little sleep(1) is need in order to keep things working.  
 This is being worked on.
 
 - Some messages, esp. coming from ETS4 S/W fail to disassemble  
-It's probably my own incompetence standing in my way to figure out the faults. Working on it.
+It's probably my ownincompetence standing in my way to figure out the faults. Working on it.
 
 ## Wanna help?
 ===
-If you feel like helping towards whatever the goal of this project might be or become, please get in touch.
+If you feel like helping towards whatever the goal of this projetc might be or become, please get in touch.
 ## Before we start:
 ===
 Please note that, however you use this toolset, which is provided as is and without any warranty or suitability for a specific purpose,
-nothing contained herein has been run through any certification or validation of the KNX organization or any certified authentication centre.
+nothing contained herein has been run through any certification or validation of the KNX organisation or any certified authentication centre.
 It is provided as starting point and in the hope that it may be useful to you.
 
 The provided code is nothing for the faint hearted. There are little comments for now.
@@ -45,7 +44,7 @@ Both of these documents are freely available in the internet provided by their r
 !!!!! DO NOT USE ANY OF THIS SOFTWARE IN A PRODUCTIVE EIB/KNX BUS INSTALLATION !!!!!
 
 If you wanna play with this stuff with some real KNX HW I suggest you start with a power supply, a simple sensor
-like for example a 2-gang KNX push button and a cheap actor. These you will have to program - for now - with
+like for example a 2-gang KNX push button and a cheap actor. These you will have to program - for now - with 
 a suitable ETS Software (the 3-devices version is to my knowledge still FOC - free of charge).
 
 In my test environment the S/W is running with a current "uptime" of 67 days (which is only due to installation of updated version).
@@ -68,7 +67,7 @@ Install the files to the /usr/bin and /usr/lib directory (nothing should interef
 $ sudo make install
 ```
 
-Create the config file directory and copy the
+Create the config file directory and copy the 
 
 ```
 $ sudo mkdir /etc/knx.d
@@ -117,7 +116,7 @@ You won't see much as output from these processes (which you might want to start
 To see what's happening on the bus in human readbale, still hex encoded form, type:
 
 ```
-tail -f /var/log/knx/knx.log
+tail -f /var/log/knx/knx.log	
 ```
 
 ### knxbackbone
@@ -125,7 +124,7 @@ tail -f /var/log/knx/knx.log
 This process doesn't really do much. In fact it simply creates a shared memory segment and ... well, nothing else. This shared memory segment obtains its structure through "eib.c" and "eib.h", which are the one library for accessing this shared memory segment.
 Every application has, by being linked against eib.o (or the library where it resides) access to this simulated knx bus, be it the knxtpbridge, or the knxmon or the sendDATATYPE programs. Each application also obtains an APN (Access Port Number) which uniquely identifies this application user.  
 Every message to be send somewhere is put into this queue (together with its APN), where it may stay forever- or until it's overwritten - if no other process cares. That's where knxtpbridge comes into the game.  
-
+  
 ***Note:*** eib provides the interface towards the ***knxbackbone*** and manages the APNs. An APN needs to be requested through the application. A participant without an APN should not write messages to the knxbackbone. This has been done since there could be many users only requiring read access to the eib/knx bus while never writing anything to it.
 ### knxtpbridge
 ===
@@ -133,7 +132,7 @@ Every message to be send somewhere is put into this queue (together with its APN
 ===
 Im Simulation mode knxtpbridge basically listens to new messages with **APNs different from its own APN** on the ***knxbackbone*** and "loops-back" these messages to the ***knxbackbone*** with **its own APN**.
 This behaviour is necessary as this simulates exactly what's happening on a one wire bus like the EIB/KNX bus.  
-***NOTE:*** this behaviour misses one aspect from a real system, i.e. the collisions, which could (and will at some point in time) be simulated. However, right now the simulated knxtpbridge is a collision free bus.
+***NOTE:*** this behaviour misses one aspect from a real system, i.e. the collisions, which could (and will at some point in time) be simulated. However, right now the simulated knxtpbridge is a collision free bus. 
 ##### real knxtpbridge (Raspberry/Jessie)
 ===
 The real-life knxtpbridge basically listens to new messages with on the RS-232 port through the TPUART interface and "enters" these messages to the knxbackbone with **its own APN**.

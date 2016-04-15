@@ -25,7 +25,7 @@
  *
  * EIB/KNX backbone process
  *
- * knxbackbone bridges a "simulated" knx-bus to a "real-world" knx-bus 
+ * knxbackbone bridges a "simulated" knx-bus to a "real-world" knx-bus
  * through a TPUART or, in
  * a purely simulated mode, e.g. on Mac OS, acts as a virtual TPUART which copies
  * everything supposed to be transmitted to the real-orld to the incoming side.
@@ -46,11 +46,11 @@
 #include	<time.h>
 #include	<math.h>
 #include	<sys/types.h>
-#include	<sys/ipc.h> 
-#include	<sys/shm.h> 
-#include	<sys/msg.h> 
-#include	<sys/sem.h> 
-#include	<sys/signal.h> 
+#include	<sys/ipc.h>
+#include	<sys/shm.h>
+#include	<sys/msg.h>
+#include	<sys/sem.h>
+#include	<sys/signal.h>
 
 #include	"debug.h"
 #include	"knxlog.h"
@@ -59,6 +59,7 @@
 #include	"nodeinfo.h"
 #include	"mylib.h"
 #include	"knxtpbridge.h"
+#include	"inilib.h"
 /**
  *
  */
@@ -106,8 +107,11 @@ int	main( int argc, char *argv[]) {
 	unsigned	char	buf, bufp ;
 	unsigned	char	*rcvData ;
 	unsigned	char	*sndData ;
+	ini	*myIni ;
 	int	cycleCounter ;
 	knxOpMode	opMode	=	opModeMaster ;
+	char	iniFilename[]	=	"/etc/knx.d/knx.ini" ;
+	char	iniBuf[64] ;
 	/**
 	 * setup the shared memory for EIB Receiving Buffer
 	 */
@@ -137,6 +141,15 @@ int	main( int argc, char *argv[]) {
 			break ;
 		}
 	}
+	/**
+	 *
+	 */
+	strcpy( iniBuf, "NOT FOUND") ;
+	myIni	=	iniFromFile( iniFilename) ;
+	dump( myIni) ;
+	getPara( myIni, "[knxtrace]", "dbHost", iniBuf) ;
+	release( myIni) ;
+	printf( ".... iniBuf %s \n", iniBuf) ;
 	/**
 	 *
 	 */
@@ -171,4 +184,3 @@ void	help() {
 	printf( "%s: %s [-D <debugLevel>] [-Q=<queueIdf>] [-M] [-S] \n\n", progName, progName) ;
 	printf( "Start a TPUART<->SimEIB/KNX bridge with id queueId.\n") ;
 }
-

@@ -524,6 +524,7 @@ void	logDb( eibHdl *_myEIB, knxMsg *_msg, int *_crf, node *_data) {
 	char	mySqlQuery[256] ;
 	FILE	*traceFile ;
 	int	i, len ;
+	int	updatedRows ;
 			MYSQL_RES	*result ;
 			MYSQL_ROW	row ;
 	/**
@@ -552,13 +553,37 @@ void	logDb( eibHdl *_myEIB, knxMsg *_msg, int *_crf, node *_data) {
 			sprintf( value, "unkonw datatype") ;
 			break ;
 		}
-		sprintf( mySqlQuery, "INSERT INTO log( GroupObjectId, Name, DataType, Value) VALUES( %d, '%s', %d, '%s');",
+		sprintf( mySqlQuery, "INSERT INTO log( GroupObjectId, DataType, Value) VALUES( %d, %d, '%s');",
 				_msg->rcvAddr,
-				actData->name,
 				actData->type,
 				value
 			) ;
 //		printf( "%s\n", mySqlQuery) ;
+		if ( mysql_query( mySql, mySqlQuery)) {
+			_debug( 0, progName, "mysql error := '%s'", mysql_error( mySql)) ;
+			_debug( 0, progName, "Exiting with -3");
+			exit( -3) ;
+		}
+		result  =       mysql_store_result( mySql) ;
+		mysql_free_result( result) ;
+		/**
+		 *
+		 */
+		sprintf( mySqlQuery, "DELETE FROM objectValue WHERE GroupObjectId = %d ;",
+				_msg->rcvAddr
+			) ;
+		if ( mysql_query( mySql, mySqlQuery)) {
+			_debug( 0, progName, "mysql error := '%s'", mysql_error( mySql)) ;
+			_debug( 0, progName, "Exiting with -3");
+			exit( -3) ;
+		}
+		result  =       mysql_store_result( mySql) ;
+		mysql_free_result( result) ;
+		sprintf( mySqlQuery, "INSERT INTO objectValue( GroupObjectId, DataType, Value) VALUES( %d, %d, '%s');",
+				_msg->rcvAddr,
+				actData->type,
+				value
+			) ;
 		if ( mysql_query( mySql, mySqlQuery)) {
 			_debug( 0, progName, "mysql error := '%s'", mysql_error( mySql)) ;
 			_debug( 0, progName, "Exiting with -3");

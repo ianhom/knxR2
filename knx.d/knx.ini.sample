@@ -1,0 +1,21 @@
+[knxglobals]
+
+[knxbackbone]
+
+[knxmon]
+
+[knxtrace]
+dbHost		=	localhost
+dbUser		=	<userId>
+dbPassword	=	<password>
+dbName		=	knxLog
+
+[handler]
+
+[hdlpellet]
+
+[hdlsolar]
+
+[hdlheating]
+
+[hdlheatpump]
