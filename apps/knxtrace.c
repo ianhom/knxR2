@@ -64,6 +64,7 @@
 #include	"knxlog.h"
 #include	"nodeinfo.h"
 #include	"knxprot.h"
+#include	"inilib.h"
 
 #include	"eib.h"		// rs232.c will differentiate:
 				// ifdef  __MAC__
@@ -141,6 +142,32 @@ int	progMode	=	1 ;
 int	connectedTo	=	0 ;
 int	myTraceMode	=	KNX_TRC_DISAS ;
 char	myTraceFileName[128] ;
+char	dbHost[64]	=	"*" ;
+char	dbName[64]	=	"*" ;
+char	dbUser[64]	=	"*" ;
+char	dbPassword[64]	=	"*" ;
+/**
+ *
+ */
+void	sigHandler( int _sig) {
+	debugLevel	=	-1 ;
+}
+void	iniCallback( char *_block, char *_para, char *_value) {
+	_debug( 1, progName, "receive ini value block/paramater/value ... : %s/%s/%s\n", _block, _para, _value) ;
+	if ( strcmp( _block, "[knxtrace]") == 0) {
+		if ( strcmp( _para , "dbHost") == 0) {
+			strcpy( dbHost, _value) ;
+		} else if ( strcmp( _para, "dbName") == 0) {
+			strcpy( dbName, _value) ;
+		} else if ( strcmp( _para, "dbUser") == 0) {
+			strcpy( dbUser, _value) ;
+		} else if ( strcmp( _para, "dbPassword") == 0) {
+			strcpy( dbPassword, _value) ;
+//		} else if ( strcmp( _para,"dbHost") == 0) {
+//			strcpy( dbHost, _value) ;
+		}
+	}
+}
 /**
  * variables related to MySQL database connection
  */
@@ -209,6 +236,7 @@ int	main( int argc, char *argv[]) {
 		int	shmCRFId ;
 		int	shmCRFSize	=	65536 * sizeof( int) ;
 		int	*crf ;
+	char	iniFilename[]	=	"/etc/knx.d/knx.ini" ;
 	/**
 	 *
 	 */
@@ -216,6 +244,10 @@ int	main( int argc, char *argv[]) {
 	strcpy( progName, *argv) ;
 	myKnxLogger	=	knxLogOpen( 0) ;
 	knxLog( myKnxLogger, progName, "starting up ...") ;
+	/**
+	 *
+	 */
+	iniFromFile( iniFilename, iniCallback) ;
 	/**
 	 * get command line options
 	 */
@@ -258,7 +290,7 @@ int	main( int argc, char *argv[]) {
 			_debug( 0, progName, "Exiting with -1");
 			exit( -1) ;
 		}
-		if ( mysql_real_connect( mySql, "localhost", "abc", "cba", "knxLog", 0, NULL, 0) == NULL) {
+		if ( mysql_real_connect( mySql, dbHost, dbUser, dbPassword, dbName, 0, NULL, 0) == NULL) {
 			_debug( 0, progName, "mysql error := '%s'", mysql_error( mySql)) ;
 			_debug( 0, progName, "Exiting with -2");
 			exit( -2) ;
@@ -553,12 +585,14 @@ void	logDb( eibHdl *_myEIB, knxMsg *_msg, int *_crf, node *_data) {
 			sprintf( value, "unkonw datatype") ;
 			break ;
 		}
+		/**
+		 * add the logging record
+		 */
 		sprintf( mySqlQuery, "INSERT INTO log( GroupObjectId, DataType, Value) VALUES( %d, %d, '%s');",
 				_msg->rcvAddr,
 				actData->type,
 				value
 			) ;
-//		printf( "%s\n", mySqlQuery) ;
 		if ( mysql_query( mySql, mySqlQuery)) {
 			_debug( 0, progName, "mysql error := '%s'", mysql_error( mySql)) ;
 			_debug( 0, progName, "Exiting with -3");
@@ -567,7 +601,9 @@ void	logDb( eibHdl *_myEIB, knxMsg *_msg, int *_crf, node *_data) {
 		result  =       mysql_store_result( mySql) ;
 		mysql_free_result( result) ;
 		/**
-		 *
+		 * update teh status record
+		 * due to a problem with the Jessie MySQL we need to delete any existing reference to this group object
+		 * and insert a new record (this will be quite heavy on the SDRAM if the Db is run on the RasPi server!!!)
 		 */
 		sprintf( mySqlQuery, "DELETE FROM objectValue WHERE GroupObjectId = %d ;",
 				_msg->rcvAddr

@@ -25,7 +25,7 @@
  *
  * KNX TP (Twisted Pair) bridge process
  *
- * knxbridge bridges a "simulated" knx-bus to a "real-world" knx-bus 
+ * knxbridge bridges a "simulated" knx-bus to a "real-world" knx-bus
  * through a TPUART or, in
  * a purely simulated mode, e.g. on Mac OS, acts as a virtual TPUART which copies
  * everything supposed to be transmitted to the real-orld to the incoming side.
@@ -55,11 +55,11 @@
 #include	<math.h>
 #include	<unistd.h>
 #include	<sys/types.h>
-#include	<sys/ipc.h> 
-#include	<sys/shm.h> 
-#include	<sys/msg.h> 
-#include	<sys/sem.h> 
-#include	<sys/signal.h> 
+#include	<sys/ipc.h>
+#include	<sys/shm.h>
+#include	<sys/msg.h>
+#include	<sys/sem.h>
+#include	<sys/signal.h>
 
 #include	"debug.h"
 #include	"knxlog.h"
@@ -82,7 +82,6 @@ extern	void	help() ;
  */
 char	progName[64]  ;
 pid_t	ownPID ;
-int	debugLevel	=	0 ;
 knxLogHdl	*myKnxLogger ;
 /**
  *
@@ -481,4 +480,3 @@ void	help() {
 	printf( "%s: %s [-D <debugLevel>] [-Q=<queueIdf>] [-M] [-S] \n\n", progName, progName) ;
 	printf( "Start a TPUART<->SimEIB/KNX bridge with id queueId.\n") ;
 }
-

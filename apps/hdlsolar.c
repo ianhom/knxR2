@@ -275,7 +275,7 @@ int	main( int argc, char *argv[]) {
 		tempWW	=	data[tempWWu].val.f ;
 		tempWW	=	data[tempWWcf].val.f ;
 		tempHB	=	( data[tempHBu].val.f + data[tempHBm].val.f) / 2.0 ;
-		tempCol	=	data[tempCol1].val.f * 1.5 ;
+		tempCol	=	data[tempCol1].val.f * 1 ;
 		diffTempCollWW	=	tempCol - tempWW ;
 		diffTempCollHB	=	tempCol - tempHB ;
 		_debug( 1, progName, "current mode .................. : %d:'%s'", currentMode, modeText[currentMode]) ;
@@ -288,7 +288,7 @@ int	main( int argc, char *argv[]) {
 			changeMode	=	0 ;
 			switch( mode) {
 			case	MODE_STOPPED	:
-				if ( diffTempCollWW >= 30.0 && tempWW < tempWWOff && tempCol >= TEMP_COL_MIN) {
+				if ( diffTempCollWW >= 15.0 && tempWW < tempWWOff && tempCol >= TEMP_COL_MIN) {
 					mode	=	MODE_WATER ;
 				} else if ( diffTempCollHB >= 10.0 && tempHB < tempHBOff && tempCol >=TEMP_COL_MIN) {
 					mode	=	MODE_BUFFER ;
@@ -298,8 +298,8 @@ int	main( int argc, char *argv[]) {
 				break ;
 			case	MODE_WATER	:
 				if ( diffTempCollWW <= 20.0 || tempWW >= tempWWOff || tempCol < TEMP_COL_MIN) {
-					changeMode	=	1 ;
 					mode	=	MODE_STOPPED ;
+					changeMode	=	1 ;
 				} else {
 				}
 				break ;
@@ -338,15 +338,15 @@ void	setModeStopped( eibHdl *_myEIB, node *data) {
         } else if ( data[pumpSolar].val.i != PUMPE_SOLAR_AUS) {
                 knxLog( myKnxLogger, progName, "ALERT ... Solar Heating Setting (on/off) is WRONG ...") ;
                 reset   =       1 ;
-        } else if ( data[valveSolar].val.i != MISCHER_SOLAR_PUFFER) {
-                knxLog( myKnxLogger, progName, "ALERT ... Solar Heating Setting (valve) is WRONG ...") ;
-                reset   =       1 ;
+//	} else if ( data[valveSolar].val.i != MISCHER_SOLAR_PUFFER) {
+//		knxLog( myKnxLogger, progName, "ALERT ... Solar Heating Setting (valve) is WRONG ...") ;
+//		reset   =       1 ;
         }
         if ( reset) {
                 knxLog( myKnxLogger, progName, "Setting mode OFF") ;
                 eibWriteBit( _myEIB, data[pumpSolar].knxGroupAddr, PUMPE_SOLAR_AUS, 0) ;
-		sleep( 1) ;
-                eibWriteBit( _myEIB, data[valveSolar].knxGroupAddr, MISCHER_SOLAR_PUFFER, 0) ;
+//		sleep( 1) ;
+//		eibWriteBit( _myEIB, data[valveSolar].knxGroupAddr, MISCHER_SOLAR_PUFFER, 0) ;
                 currentMode     =       MODE_STOPPED ;
         }
 }

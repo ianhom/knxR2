@@ -31,7 +31,7 @@
  * date		rev.	who	what
  * ----------------------------------------------------------------------------
  * 2015-11-20	PA1	userId	inception;
- * 2016-04-04	PA1	userId	inception;
+ * 2016-04-04	PA2	first try-out;
  *
  */
 #include	<stdio.h>
@@ -41,9 +41,9 @@
 #include	<strings.h>
 #include	<time.h>
 #include	<sys/types.h>
-#include	<sys/ipc.h> 
-#include	<sys/shm.h> 
-#include	<sys/msg.h> 
+#include	<sys/ipc.h>
+#include	<sys/shm.h>
+#include	<sys/msg.h>
 
 #include	"debug.h"
 #include	"knxlog.h"
@@ -51,7 +51,7 @@
 #include	"mylib.h"
 #include	"eib.h"
 
-#define	CYCLE_TIME	2		// run in 10-seconds cycles
+#define	CYCLE_TIME	5		// run in 10-seconds cycles
 
 extern	void	setOff( eibHdl *, int) ;
 extern	void	setOn( eibHdl *, int) ;
@@ -60,9 +60,19 @@ extern	void	dumpData( node *, int, int, void *) ;
 extern	void	dumpValveTable( node *, int *, float *) ;
 
 char	progName[64] ;
-int	debugLevel ;
 knxLogHdl	*myKnxLogger ;
-
+/**
+ *
+ */
+void	sigHandler( int _sig) {
+	debugLevel	=	-1 ;
+}
+void	iniCallback( char *_block, char *_para, char *_value) {
+	_debug( 1, progName, "receive ini value block/paramater/value ... : %s/%s/%s\n", _block, _para, _value) ;
+}
+/**
+ *
+ */
 typedef	struct	{
 		int		id ;
 		char		name[32] ;
@@ -73,32 +83,46 @@ typedef	struct	{
 		int		gaTempOut ;
 		int		gaTempFreeze ;
 		int		gaValve ;
-		float		temp[4] ;
+		float		temp[8] ;	// 0= Freeze float, 1= Comfort float, 2= Night float, 3= Out float, 4= Act
 	}	floorValve ;
 
 floorValve	valves[]	=	{
-		{	0, "UG_TECH"	,6657	,6663	,0	,0	,0	,0	,8449	, 7.0, 19.0, 21.0, 19.0}
-	,	{	0, "UG_OFCL"	,6667	,6673	,0	,0	,0	,0	,8450	, 7.0, 19.0, 21.0, 19.0}
-	,	{	0, "UG_OFCR"	,6677	,6683	,0	,0	,0	,0	,8451	, 7.0, 19.0, 21.0, 19.0}
-	,	{	0, "UG_STO1"	,6687	,6693	,0	,0	,0	,0	,8452	, 7.0, 19.0, 21.0, 19.0}
-	,	{	0, "UG_STO2"	,6697	,6703	,0	,0	,0	,0	,8453	, 7.0, 19.0, 21.0, 19.0}
-	,	{	0, "UG_HALL"	,6707	,6713	,0	,0	,0	,0	,8454	, 7.0, 19.0, 21.0, 19.0}
-	,	{	0, "EG_HWR"	,6913	,6919	,0	,0	,0	,0	,8961	, 7.0, 19.0, 21.0, 19.0}
-	,	{	0, "EG_GUEST"	,6923	,6929	,0	,0	,0	,0	,8962	, 7.0, 19.0, 21.0, 19.0}
-	,	{	0, "EG_LIV"	,6933	,6939	,0	,0	,0	,0	,8963	, 7.0, 19.0, 21.0, 19.0}
-	,	{	0, "EG_DIN"	,6943	,6949	,0	,0	,0	,0	,8964	, 7.0, 19.0, 21.0, 19.0}
-	,	{	0, "EG_KITCH"	,6953	,6959	,0	,0	,0	,0	,8965	, 7.0, 19.0, 21.0, 19.0}
-	,	{	0, "EG_BATH"	,6963	,6969	,0	,0	,0	,0	,8966	, 7.0, 21.0, 22.0, 19.0}
-	,	{	0, "EG_HALL"	,6973	,6979	,0	,0	,0	,0	,8967	, 7.0, 19.0, 21.0, 19.0}
-	,	{	0, "OG_MBATH"	,7169	,7175	,0	,0	,0	,0	,9217	, 7.0, 21.0, 22.0, 19.0}
-	,	{	0, "OG_MBR"	,7179	,7185	,0	,0	,0	,0	,9218	, 7.0, 19.0, 18.0, 19.0}
-	,	{	0, "OG_BATH"	,7189	,7195	,0	,0	,0	,0	,9219	, 7.0, 21.0, 22.0, 19.0}
-	,	{	0, "OG_BRR"	,7199	,7205	,0	,0	,0	,0	,9220	, 7.0, 19.0, 21.0, 19.0}
-	,	{	0, "OG_BRF"	,7209	,7215	,0	,0	,0	,0	,9221	, 7.0, 19.0, 18.0, 19.0}
-	,	{	0, "OG_HALL"	,7219	,7225	,0	,0	,0	,0	,9222	, 7.0, 19.0, 20.0, 19.0}
-	,	{	-1, ""		,0	,0	,0	,0	,0	,0	,0	, 7.0, 19.0, 21.0, 19.0}
+		{	0, "UG_TECH"	,6657	,6663	,0	,0	,0	,0	,8449	, 7.0, 19.0, 21.0, 19.0,0,0,0,0}
+	,	{	0, "UG_OFCL"	,6667	,6673	,0	,0	,0	,0	,8450	, 7.0, 19.0, 21.0, 19.0,0,0,0,0}
+	,	{	0, "UG_OFCR"	,6677	,6683	,0	,0	,0	,0	,8451	, 7.0, 19.0, 21.0, 19.0,0,0,0,0}
+	,	{	0, "UG_STO1"	,6687	,6693	,0	,0	,0	,0	,8452	, 7.0, 19.0, 21.0, 19.0,0,0,0,0}
+	,	{	0, "UG_STO2"	,6697	,6703	,0	,0	,0	,0	,8453	, 7.0, 19.0, 21.0, 19.0,0,0,0,0}
+	,	{	0, "UG_HALL"	,6707	,6713	,0	,0	,0	,0	,8454	, 7.0, 19.0, 21.0, 19.0,0,0,0,0}
+	,	{	0, "EG_HWR"	,6913	,6919	,0	,0	,0	,0	,8961	, 7.0, 19.0, 21.0, 19.0,0,0,0,0}
+	,	{	0, "EG_GUEST"	,6923	,6929	,0	,0	,0	,0	,8962	, 7.0, 19.0, 21.0, 19.0,0,0,0,0}
+	,	{	0, "EG_LIV"	,6933	,6939	,0	,0	,0	,0	,8963	, 7.0, 19.0, 21.0, 19.0,0,0,0,0}
+	,	{	0, "EG_DIN"	,6943	,6949	,0	,0	,0	,0	,8964	, 7.0, 19.0, 21.0, 19.0,0,0,0,0}
+	,	{	0, "EG_KITCH"	,6953	,6959	,0	,0	,0	,0	,8965	, 7.0, 19.0, 21.0, 19.0,0,0,0,0}
+	,	{	0, "EG_BATH"	,6963	,6969	,0	,0	,0	,0	,8966	, 7.0, 21.0, 22.0, 19.0,0,0,0,0}
+	,	{	0, "EG_HALL"	,6973	,6979	,0	,0	,0	,0	,8967	, 7.0, 19.0, 21.0, 19.0,0,0,0,0}
+	,	{	0, "OG_MBATH"	,7169	,7175	,0	,0	,0	,0	,9217	, 7.0, 21.0, 22.0, 19.0,0,0,0,0}
+	,	{	0, "OG_MBR"	,7179	,7185	,0	,0	,0	,0	,9218	, 7.0, 19.0, 18.0, 19.0,0,0,0,0}
+	,	{	0, "OG_BATH"	,7189	,7195	,0	,0	,0	,0	,9219	, 7.0, 23.0, 23.0, 19.0,0,0,0,0}
+	,	{	0, "OG_BRR"	,7199	,7205	,0	,0	,0	,0	,9220	, 7.0, 19.0, 21.0, 19.0,0,0,0,0}
+	,	{	0, "OG_BRF"	,7209	,7215	,0	,0	,0	,0	,9221	, 7.0, 19.0, 18.0, 19.0,0,0,0,0}
+	,	{	0, "OG_HALL"	,7219	,7225	,0	,0	,0	,0	,9222	, 7.0, 19.0, 20.0, 19.0,0,0,0,0}
+	,	{	-1, ""		,0	,0	,0	,0	,0	,0	,0	, 7.0, 19.0, 21.0, 19.0,0,0,0,0}
 	} ;
+typedef	struct	{
+		int	mode ;
+		char	text[64] ;
+	}	modesText ;
 
+modesText	modes[]	=	{
+		{	0x00,	"Mode 0"	}
+	,	{	0x01,	"Mode 1"	}
+	,	{	0x02,	"Mode 2"	}
+	,	{	0x03,	"Mode 3"	}
+	,	{	0x04,	"Mode 4"	}
+	,	{	0x05,	"Mode 5"	}
+	,	{	0x06,	"Mode 6"	}
+	,	{	0x07,	"Mode 7"	}
+	} ;
 
 extern	void	help() ;
 
@@ -160,9 +184,9 @@ int	main( int argc, char *argv[]) {
 	/**
 	 * get command line options
 	 */
-	while (( opt = getopt( argc, argv, "d:?")) != -1) {
+	while (( opt = getopt( argc, argv, "D:?")) != -1) {
 		switch ( opt) {
-		case	'd'	:
+		case	'D'	:
 			debugLevel	=	atoi( optarg) ;
 			break ;
 		case	'?'	:
@@ -184,6 +208,7 @@ int	main( int argc, char *argv[]) {
 	/**
 	 * setup the shared memory for COMtable
 	 */
+	printf( "Debug Level ... %d \n", debugLevel) ;
 	_debug( 1, progName,  "trying to obtain shared memory COMtable ...") ;
 	if (( shmCOMId = shmget( shmCOMKey, shmCOMSize, 0600)) < 0) {
 		perror( "knxmon: shmget failed for COMtable");
@@ -208,7 +233,7 @@ int	main( int argc, char *argv[]) {
 	comfort		=	getEntry( data, lastDataIndexC, "SwitchCO") ;
 	night		=	getEntry( data, lastDataIndexC, "SwitchNI") ;
 	myEIB	=	eibOpen( 33, 0x00, 10031) ;
-	while ( 1) {
+	while ( debugLevel >= 0) {
 		modeCurrent	=	data[comfort].val.i << 1 | data[night].val.i ;
 		_debug( 1, progName, "Day/Night node %02x", modeCurrent) ;
 		/**
@@ -221,6 +246,9 @@ int	main( int argc, char *argv[]) {
 		 *
 		 */
 		for ( i=0 ; valves[i].id != -1 ; i++) {
+			/**
+			 * IF we have plausible values for target and actual temperature
+			 */
 			if ( floats[ valves[ i].gaTempAct] > 1.0 && floats[ valves[ i].gaTempTarget] >= 1.0) {
 				_debug( 1, progName, "valid target temperature for valve %d", valves[ i].gaValve) ;
 				if ( floats[ valves[ i].gaTempAct] >= floats[ valves[ i].gaTempTarget] &&
@@ -232,6 +260,9 @@ int	main( int argc, char *argv[]) {
 					_debug( 1, progName, "switching on valve %d", valves[ i].gaValve) ;
 					setOn( myEIB, valves[ i].gaValve) ;
 				}
+			/**
+			 * ELSE IF we have reasonable values for actual temperature
+			 */
 			} else if ( floats[ valves[ i].gaTempAct] > 1.0) {
 				_debug( 1, progName, "NO valid target temperature for valve %d", valves[ i].gaValve) ;
 				if ( floats[ valves[ i].gaTempAct] >= valves[ i].temp[modeCurrent] &&
@@ -244,9 +275,9 @@ int	main( int argc, char *argv[]) {
 					setOn( myEIB, valves[ i].gaValve) ;
 				}
 			} else {
-				_debug( 1, progName, "NO valid actual temperature for valve %d", valves[ i].gaValve) ;
+				_debug( 1, progName, "NO valid actual temperature for %s", valves[ i].name) ;
 				if ( ints[ valves[ i].gaValve] != 0) {
-					_debug( 1, progName, "NO valid temperatures for valve %d", valves[ i].gaValve) ;
+					_debug( 1, progName, "will switch off valve %d", valves[ i].gaValve) ;
 					setOff( myEIB, valves[ i].gaValve) ;
 				}
 			}
@@ -264,7 +295,7 @@ int	main( int argc, char *argv[]) {
 void	dumpValveTable( node *data, int *ints, float *floats) {
 	int	i ;
 	for ( i=0 ; valves[i].id != -1 ; i++) {
-		printf( "%s: %-20s => Actual := %5.2f, Target := %5.2f, Valve := %s\n",
+		_debug( 1, progName, "%s: %-20s => Actual := %5.2f, Target := %5.2f, Valve := %s",
 				progName,
 				valves[i].name,
 				floats[ valves[ i].gaTempAct],

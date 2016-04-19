@@ -74,13 +74,15 @@ extern	void	help() ;
  */
 char	progName[64]  ;
 pid_t	ownPID ;
-int	debugLevel	=	0 ;
 knxLogHdl	*myKnxLogger ;
 /**
  *
  */
 void	sigHandler( int _sig) {
 	debugLevel	=	-1 ;
+}
+void	iniCallback( char *_block, char *_para, char *_value) {
+	_debug( 1, progName, "receive ini value block/paramater/value ... : %s/%s/%s\n", _block, _para, _value) ;
 }
 /**
  *
@@ -111,7 +113,6 @@ int	main( int argc, char *argv[]) {
 	int	cycleCounter ;
 	knxOpMode	opMode	=	opModeMaster ;
 	char	iniFilename[]	=	"/etc/knx.d/knx.ini" ;
-	char	iniBuf[64] ;
 	/**
 	 * setup the shared memory for EIB Receiving Buffer
 	 */
@@ -119,7 +120,13 @@ int	main( int argc, char *argv[]) {
 	signal( SIGINT, sigHandler) ;
 	setbuf( stdout, NULL) ;
 	strcpy( progName, *argv) ;
-	_debug( 0, progName, "starting up ...") ;
+	myKnxLogger	=	knxLogOpen( 0) ;
+	knxLog( myKnxLogger, progName, "starting up ...") ;
+	/**
+	 *
+	 */
+	debugLevel	=	99 ;
+	iniFromFile( iniFilename, iniCallback) ;
 	/**
 	 * get command line options
 	 */
@@ -144,17 +151,6 @@ int	main( int argc, char *argv[]) {
 	/**
 	 *
 	 */
-	strcpy( iniBuf, "NOT FOUND") ;
-	myIni	=	iniFromFile( iniFilename) ;
-	dump( myIni) ;
-	getPara( myIni, "[knxtrace]", "dbHost", iniBuf) ;
-	release( myIni) ;
-	printf( ".... iniBuf %s \n", iniBuf) ;
-	/**
-	 *
-	 */
-	myKnxLogger	=	knxLogOpen( IPC_CREAT) ;
-	knxLog( myKnxLogger, progName, "%d: starting up ...", ownPID) ;
 	if ( createPIDFile( progName, "", ownPID)) {
 		myEIB	=	eibOpen( 0x0000, IPC_CREAT, queueKey) ;
 		while ( debugLevel >= 0) {

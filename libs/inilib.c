@@ -46,7 +46,67 @@
 #include	"debug.h"
 #include	"inilib.h"
 
-ini	*iniFromFile( char *_file) {
+ini	*iniFromFile( char *_file, iniCB _iniCB) {
+	int	status = -1 ;
+	int	i ;
+	ini	*this ;
+	int	lc ;
+	int	tc ;
+	char	line[128] ;
+	char	block[32], para[32], value[64] ;
+	char	*lp, *p ;
+	int	earlEx ;
+	/**
+	 *
+	 */
+	this	=	malloc( sizeof( ini)) ;
+	if ( this) {
+		this->iniFile	=	fopen( _file, "r") ;
+		if ( this->iniFile) {
+			lc	=	0 ;
+			strcpy( block, "*") ;
+			strcpy( para, "*") ;
+			strcpy( value, "*") ;
+			while ( fgets( line, 128, this->iniFile)) {
+				lc++ ;
+				lp	=	line ;
+				tc	=	0 ;
+				earlEx	=	0 ;
+				for ( p=strtok( lp, " \t\n") ; p != NULL && earlEx == 0 ; p=strtok( NULL, " \t\n")) {
+					switch ( tc) {
+					case	0	:
+						if ( p[0] == '[')
+							strcpy( block, p) ;
+						else if ( p[0] == '#')			// comment => early exit
+							earlEx	=	1 ;
+						else
+							strcpy( para, p) ;
+						break ;
+					case	1	:
+						break ;
+					case	2	:
+						strcpy( value, p) ;
+						break ;
+					default	:
+						break ;
+					}
+					tc++ ;
+				}
+				_iniCB( block, para, value) ;
+				strcpy( para, "*") ;
+				strcpy( value, "*") ;
+			}
+			fclose( this->iniFile) ;
+		} else {
+			printf( "inilib.c: could not open(find?) ini file\n") ;
+		}
+	} else {
+		printf( "inilib.c: could not allocate buffer\n") ;
+	}
+	return this ;
+}
+
+ini	*iniFromFileOLD( char *_file, iniCB _iniCB) {
 		int	status = -1 ;
 		int	i ;
 		ini	*this ;

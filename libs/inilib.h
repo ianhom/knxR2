@@ -40,7 +40,9 @@ typedef	struct	{
 		char	*lines[] ;
 	}	ini ;
 
-extern	ini	*iniFromFile( char *) ;
+typedef	void	(*iniCB)( char *, char *, char *) ;
+
+extern	ini	*iniFromFile( char *, iniCB _iniCB) ;
 extern	void	dump( ini *) ;
 extern	char	*getPara( ini *, char *, char *, char *) ;
 extern	ini	*release( ini *) ;
