@@ -20,8 +20,8 @@
 #include	<math.h>
 #include	<getopt.h>
 #include	<sys/types.h>
-#include	<sys/ipc.h> 
-#include	<sys/shm.h> 
+#include	<sys/ipc.h>
+#include	<sys/shm.h>
 #include	<sys/msg.h>
 
 #include	"debug.h"
@@ -46,6 +46,8 @@ char	progName[64] ;
 int	debugLevel	=	0 ;
 
 int	main( int argc, char *argv[]) {
+		eibHdl	*myEIB ;
+		int		myAPN	=	0 ;
 		int	opt ;
 		int	status		=	0 ;
 		int	sleepTimer	=	0 ;
@@ -90,7 +92,8 @@ int	main( int argc, char *argv[]) {
 	/**
 	 *
 	 */
-	eibOpen( 0x0002, 0) ;
+	myEIB	=	eibOpen( 0x0002, 0) ;
+	myAPN	=	eibAssignAPN( myEIB, progName) ;
 	sleepTimer	=	0 ;
 	while ( 1) {
 		myMsg	=	eibReceive( &myMsgBuf) ;

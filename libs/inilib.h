@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2015 wimtecc, Karl-Heinz Welter
+ * Copyright (c) 2015, 2016 wimtecc, Karl-Heinz Welter
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -19,32 +19,30 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+/**
+ *
+ * inilib.h
+ *
+ * some useful functions
+ *
+ * Revision history
+ *
+ * date		rev.	who	what
+ * ----------------------------------------------------------------------------
+ * 2015-11-20	PA1	khw	inception;
+ * 2016-04-27	PA2	khw	reduced to the max;
+ *
+ */
 
 #ifndef inilib_INCLUDED
 #define	inilib_INCLUDED
 
-typedef	union	{
-		int	i ;
-		float	f ;
-		double	d ;
-		char	s[64] ;
-	}	iniValue ;
-
-typedef	struct	{
-		char	name[32] ;
-		iniValue	value ;
-	}	iniEntry ;
-
-typedef	struct	{
-		FILE	*iniFile ;
-		char	*lines[] ;
-	}	ini ;
+typedef	enum	iniStatus	{
+		OK	=	0
+	} iniStat ;
 
 typedef	void	(*iniCB)( char *, char *, char *) ;
 
-extern	ini	*iniFromFile( char *, iniCB _iniCB) ;
-extern	void	dump( ini *) ;
-extern	char	*getPara( ini *, char *, char *, char *) ;
-extern	ini	*release( ini *) ;
+extern	iniStat	iniFromFile( char *, iniCB _iniCB) ;
 
 #endif

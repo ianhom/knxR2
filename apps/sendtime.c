@@ -46,19 +46,46 @@
 #include	"knxtpbridge.h"
 #include	"nodeinfo.h"
 #include	"mylib.h"
-
+#include	"inilib.h"
+/**
+ *
+ */
+/**
+ *
+ */
 extern	void	help() ;
 
 char	progName[64] ;
 int	debugLevel	=	0 ;
-
+/**
+ *
+ */
+int	cfgQueueKey	=	10031 ;
+int	cfgSenderAddr	=	1 ;
+/**
+ *
+ */
+void	iniCallback( char *_block, char *_para, char *_value) {
+	_debug( 1, progName, "receive ini value block/paramater/value ... : %s/%s/%s\n", _block, _para, _value) ;
+	if ( strcmp( _block, "[knxglobals]") == 0) {
+		if ( strcmp( _para, "queueKey") == 0) {
+			cfgQueueKey	=	atoi( _value) ;
+		}
+	} else if ( strcmp( _block, "[sendf16]") == 0) {
+		if ( strcmp( _para, "senderAddr") == 0) {
+			cfgSenderAddr	=	atoi( _value) ;
+		}
+	}
+}
+/**
+ *
+ */
 int main( int argc, char *argv[]) {
 			eibHdl		*myEIB ;
 			short		group ;
 	unsigned	char		buf[16] ;
 			int		msgLen ;
 			int		opt ;
-			int		queueKey	=	10031 ;
 			int		sender	=	0 ;
 			int		receiver	=	0 ;
 			int		value ;
@@ -70,11 +97,16 @@ int main( int argc, char *argv[]) {
 			int		data[4] ;
 			time_t		t ;
 			struct	tm	tm ;
+			char		iniFilename[]	=	"knx.ini" ;
 	/**
 	 *
 	 */
 	strcpy( progName, *argv) ;
 	printf( "%s: starting up ... \n", progName) ;
+	/**
+	 *
+	 */
+	iniFromFile( iniFilename, iniCallback) ;
 	/**
 	 *
 	 */
@@ -94,7 +126,7 @@ int main( int argc, char *argv[]) {
 			debugLevel	=	atoi( optarg) ;
 			break ;
 		case	'Q'	:
-			queueKey	=	atoi( optarg) ;
+			cfgQueueKey	=	atoi( optarg) ;
 			break ;
 		case	's'	:
 			sender	=	atoi( optarg) ;
@@ -134,7 +166,7 @@ int main( int argc, char *argv[]) {
 		/**
 		 *
 		 */
-		myEIB	=	eibOpen( sender, 0, queueKey) ;
+		myEIB	=	eibOpen( cfgSenderAddr, 0, cfgQueueKey, progName, APN_WRONLY) ;
 		data[ 0]	=	wday ;
 		data[ 1]	=	hour ;
 		data[ 2]	=	min ;

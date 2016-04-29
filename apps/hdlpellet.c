@@ -42,15 +42,16 @@
 #include	<stdlib.h>
 #include	<time.h>
 #include	<sys/types.h>
-#include	<sys/ipc.h> 
-#include	<sys/shm.h> 
-#include	<sys/msg.h> 
+#include	<sys/ipc.h>
+#include	<sys/shm.h>
+#include	<sys/msg.h>
 
 #include	"eib.h"
 #include	"debug.h"
 #include	"nodeinfo.h"
 #include	"mylib.h"
 #include	"knxlog.h"
+#include	"inilib.h"
 
 typedef	enum	modePS	{
 			MODE_INVALID	=	-1
@@ -74,7 +75,6 @@ extern	void	setModeBuffer( eibHdl *, node *) ;
 extern	void	help() ;
 
 char	progName[64] ;
-int	debugLevel	=	0 ;
 knxLogHdl	*myKnxLogger ;
 modePS	currentMode ;
 
@@ -86,7 +86,32 @@ char	*modeText[3]	=	{
 	,	"heating water tank"
 	,	"heating buffer"
 	} ;
-
+/**
+ *
+ */
+int	cfgQueueKey	=	10031 ;
+int	cfgSenderAddr	=	1 ;
+int	cfgConsiderTime	=	1 ;
+/**
+ *
+ */
+void	iniCallback( char *_block, char *_para, char *_value) {
+	_debug( 1, progName, "receive ini value block/paramater/value ... : %s/%s/%s\n", _block, _para, _value) ;
+	if ( strcmp( _block, "[knxglobals]") == 0) {
+		if ( strcmp( _para, "queueKey") == 0) {
+			cfgQueueKey	=	atoi( _value) ;
+		}
+	} else if ( strcmp( _block, "[hdlpellet]") == 0) {
+		if ( strcmp( _para, "senderAddr") == 0) {
+			cfgSenderAddr	=	atoi( _value) ;
+		} else if ( strcmp( _para, "considerTime") == 0) {
+			cfgConsiderTime	=	atoi( _value) ;
+		}
+	}
+}
+/**
+ *
+ */
 int	main( int argc, char *argv[]) {
 		eibHdl	*myEIB ;
 		int	status		=	0 ;
@@ -115,7 +140,6 @@ int	main( int argc, char *argv[]) {
 								// WarmWater
 		int	tempHBu ;				// point to node["TempHBu"],
 								// HeatingBuffer
-		int	queueKey	=	10031 ;
 		time_t	lastOffTime	=	0L ;
 		time_t	lastOnTime	=	0L ;
 	/**
@@ -146,19 +170,24 @@ int	main( int argc, char *argv[]) {
 	/**
 	 * define shared memory segment #3: Cross-Reference table
  	 */
-		key_t	shmCRFKey	=	SHM_CRF_KEY ;
-		int	shmCRFFlg	=	IPC_CREAT | 0600 ;
-		int	shmCRFId ;
-		int	shmCRFSize	=	65536 * sizeof( int) ;
-		int	*crf ;
-		time_t	actTime ;
-	struct	tm	myTime ;
-		int	timerMode	=	0 ;
+			key_t		shmCRFKey	=	SHM_CRF_KEY ;
+			int		shmCRFFlg	=	IPC_CREAT | 0600 ;
+			int		shmCRFId ;
+			int		shmCRFSize	=	65536 * sizeof( int) ;
+			int		*crf ;
+			time_t		actTime ;
+	struct	tm			myTime ;
+			int		timerMode	=	0 ;
+			char		iniFilename[]	=	"knx.ini" ;
 	/**
 	 *
 	 */
 	strcpy( progName, *argv) ;
 	_debug( 0, progName, "starting up ...") ;
+	/**
+	 *
+	 */
+	iniFromFile( iniFilename, iniCallback) ;
 	/**
 	 * get command line options
 	 */
@@ -171,7 +200,7 @@ int	main( int argc, char *argv[]) {
 			debugLevel	=	atoi( optarg) ;
 			break ;
 		case	'Q'	:
-			queueKey	=	atoi( optarg) ;
+			cfgQueueKey	=	atoi( optarg) ;
 			break ;
 		/**
 		 * application specific options
@@ -248,39 +277,38 @@ int	main( int argc, char *argv[]) {
 	/**
 	 *
 	 */
-	myEIB	=	eibOpen( 0x1234, 0, queueKey) ;
+	myEIB	=	eibOpen( cfgSenderAddr, 0, cfgQueueKey, progName, APN_WRONLY) ;
 	while ( debugLevel >= 0) {
 		/**
 		 *
 		 */
-		actTime	=	time( NULL) ;
-		myTime	=	*localtime( &actTime) ;
-		timerMode	=	0 ;
-		switch ( myTime.tm_wday) {
-		case	6	:		// saturday
-			if ( myTime.tm_hour >= 5 && myTime.tm_hour <= 12) {
-				timerMode	=	1 ;
+		if ( cfgConsiderTime != 0) {
+			actTime	=	time( NULL) ;
+			myTime	=	*localtime( &actTime) ;
+			timerMode	=	0 ;
+			switch ( myTime.tm_wday) {
+			case	6	:		// saturday
+				if ( myTime.tm_hour >= 5 && myTime.tm_hour <= 12) {
+					timerMode	=	1 ;
+				}
+				break ;
+			case	0	:		// sunday
+				if ( myTime.tm_hour >= 7 && myTime.tm_hour <= 12) {
+					timerMode	=	1 ;
+				}
+				break ;
+			default	:			// monday - friday
+				if ( myTime.tm_hour >= 4 && myTime.tm_hour <= 8) {
+					timerMode	=	1 ;
+				} else if ( myTime.tm_hour >= 19 && myTime.tm_hour <= 21) {
+					timerMode	=	1 ;
+				}
+				break ;
 			}
-			break ;
-		case	0	:		// sunday
-			if ( myTime.tm_hour >= 7 && myTime.tm_hour <= 12) {
-				timerMode	=	1 ;
-			}
-			break ;
-		default	:			// monday - friday
-			if ( myTime.tm_hour >= 4 && myTime.tm_hour <= 8) {
-				timerMode	=	1 ;
-			} else if ( myTime.tm_hour >= 19 && myTime.tm_hour <= 21) {
-				timerMode	=	1 ;
-			}
-			break ;
-		}
-		_debug( 1, progName, "timer mode .................... : %d", timerMode) ;
-		/**
-		 * dump all input data for this "MES"
-		 */
-		if ( debugLevel > 1) {
-			dumpData( data, lastDataIndexC, MASK_PELLET, (void *) floats) ;
+			_debug( 1, progName, "timer mode .................... : %d", timerMode) ;
+		} else {
+			_debug( 1, progName, "timer mode .................... : not considered", timerMode) ;
+			timerMode	=	1 ;
 		}
 		/**
 		 *
@@ -290,7 +318,7 @@ int	main( int argc, char *argv[]) {
 		tempWW	=	data[tempWWu].val.f ;
 		tempHB	=	data[tempHBu].val.f ;
 		_debug( 1, progName, "week day (0= sun, ... 6=sat)... : %d", myTime.tm_wday) ;
-		_debug( 1, progName, "hour .......................... : %d", myTime.tm_hour) ;
+		_debug( 1, progName, "hour .......................... : %02d:%02d", myTime.tm_hour, myTime.tm_min) ;
 		_debug( 1, progName, "timer mode .................... : %d", timerMode) ;
 		_debug( 1, progName, "current mode .................. : %d:'%s'", currentMode, modeText[currentMode]) ;
 		_debug( 1, progName, "temp. warm water, actual ...... : %5.1f ( %5.1f ... %5.1f)", tempWW, tempWWOn, tempWWOff) ;
@@ -349,9 +377,11 @@ void	setModeStopped( eibHdl *_myEIB, node *data) {
 	if ( currentMode != MODE_STOPPED) {
 		reset	=	1 ;
 	} else if ( data[pelletStove].val.i != 0) {
+		_debug( 1, progName, "ALERT ... Pellet Stove Setting (on/off) is WRONG ...") ;
 		knxLog( myKnxLogger, progName, "ALERT ... Pellet Stove Setting (on/off) is WRONG ...") ;
 		reset	=	1 ;
 	} else if ( data[valvePelletStove].val.i != VALVE_PS_WW) {
+		_debug( 1, progName, "ALERT ... Pellet Stove Setting (valve) is WRONG WRONG ...") ;
 		knxLog( myKnxLogger, progName, "ALERT ... Pellet Stove Setting (valve) is WRONG ...") ;
 		reset	=	1 ;
 	}
@@ -369,6 +399,7 @@ void	setModeWater( eibHdl *_myEIB, node *data) {
 	if ( currentMode != MODE_WATER) {
 		reset	=	1 ;
 	} else if ( data[pelletStove].val.i != 1 || data[valvePelletStove].val.i != VALVE_PS_WW) {
+		_debug( 1, progName, "ALERT ... Pellet Stove Settings are WRONG ...") ;
 		knxLog( myKnxLogger, progName, "ALERT ... Pellet Stove Settings are WRONG ...") ;
 		reset	=	1 ;
 	}
@@ -386,6 +417,7 @@ void	setModeBuffer( eibHdl *_myEIB, node *data) {
 	if ( currentMode != MODE_BUFFER) {
 		reset	=	1 ;
 	} else if ( data[pelletStove].val.i != 1 || data[valvePelletStove].val.i != VALVE_PS_HB) {
+		_debug( 1, progName, "ALERT ... Pellet Stove Settings are WRONG ...") ;
 		knxLog( myKnxLogger, progName, "ALERT ... Pellet Stove Settings are WRONG ...") ;
 		reset	=	1 ;
 	}

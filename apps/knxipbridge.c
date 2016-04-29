@@ -43,10 +43,10 @@
 #include	<math.h>
 #include	<fcntl.h>
 #include	<sys/types.h>
-#include	<sys/ipc.h> 
-#include	<sys/shm.h> 
-#include	<sys/msg.h> 
-#include	<sys/sem.h> 
+#include	<sys/ipc.h>
+#include	<sys/shm.h>
+#include	<sys/msg.h>
+#include	<sys/sem.h>
 #include	<sys/socket.h>
 #include	<sys/signal.h>
 #include	<netinet/in.h>
@@ -57,6 +57,8 @@
 #include	"knxlog.h"
 #include	"knxipbridge.h"
 #include	"eib.h"
+#include	"eib.h"
+#include	"inilib.h"
 /**
  *
  */
@@ -88,11 +90,30 @@ void	sigHandler( int _sig) {
 /**
  *
  */
+int	cfgQueueKey	=	10031 ;
+int	cfgSenderAddr	=	1 ;
+/**
+ *
+ */
+void	iniCallback( char *_block, char *_para, char *_value) {
+	_debug( 1, progName, "receive ini value block/paramater/value ... : %s/%s/%s\n", _block, _para, _value) ;
+	if ( strcmp( _block, "[knxglobals]") == 0) {
+		if ( strcmp( _para, "queueKey") == 0) {
+			cfgQueueKey	=	atoi( _value) ;
+		}
+	} else if ( strcmp( _block, "[knxipbridge]") == 0) {
+		if ( strcmp( _para, "senderAddr") == 0) {
+			cfgSenderAddr	=	atoi( _value) ;
+		}
+	}
+}
+/**
+ *
+ */
 int	main( int argc, char *argv[]) {
 	pid_t	ownPID ;
 	pid_t	childProcessId, waitProcessId ;
 	int	opt ;
-	int	queueKey	=	10031 ;
 	int	sleepTimer	=	0 ;
 	char	serverName[64]	=	"" ;
 	unsigned	char	buf, bufp ;
@@ -110,6 +131,7 @@ int	main( int argc, char *argv[]) {
 	struct		sockaddr_in serv_addr, cli_addr;
 	int		n;
 	struct		hostent	*server ;
+			char		iniFilename[]	=	"knx.ini" ;
 	/**
 	 * setup the shared memory for EIB Receiving Buffer
 	 */
@@ -118,6 +140,10 @@ int	main( int argc, char *argv[]) {
 	setbuf( stdout, NULL) ;
 	strcpy( progName, *argv) ;
 	_debug( 0, progName, "starting up ...") ;
+	/**
+	 *
+	 */
+	iniFromFile( iniFilename, iniCallback) ;
 	/**
 	 * get command line options
 	 */
@@ -131,7 +157,7 @@ int	main( int argc, char *argv[]) {
 			strcpy( serverName, optarg) ;
 			break ;
 		case	'Q'	:
-			queueKey	=	atoi( optarg) ;
+			cfgQueueKey	=	atoi( optarg) ;
 			break ;
 		case	'?'	:
 			help() ;
@@ -155,7 +181,7 @@ int	main( int argc, char *argv[]) {
 	 *	we will contact the server named "serverName"
 	 */
 	if ( strlen( serverName) == 0) {
-	_debug( 0, progName, "starting up ...") ;
+		_debug( 0, progName, "starting up ...") ;
 		knxLog( myKnxLogger, progName, "%d: in server mode", ownPID) ;
 		myMode	=	eibServer ;
 		rootSockfd	=	socket( AF_INET, SOCK_STREAM, 0) ;
@@ -189,7 +215,7 @@ int	main( int argc, char *argv[]) {
 			} else if ( workSockfd >= 0) {
 				pid	=	fork() ;
 				if ( pid == 0) {
-					hdlSocket( queueKey, workSockfd) ;
+					hdlSocket( cfgQueueKey, workSockfd) ;
 					exit( 0) ;
 				} else {
 					close( workSockfd) ;
@@ -228,7 +254,7 @@ int	main( int argc, char *argv[]) {
 			_debug( 0, progName, "Exiting with -3");
 			return( -3);
 		}
-		hdlSocket( queueKey, workSockfd) ;
+		hdlSocket( cfgQueueKey, workSockfd) ;
 	}
 	/**
 	 *
@@ -238,7 +264,7 @@ int	main( int argc, char *argv[]) {
 	exit( 0) ;
 }
 
-void	hdlSocket( int queueKey, int workSockfd) {
+void	hdlSocket( int cfgQueueKey, int workSockfd) {
 	eibHdl	*myEIB ;
 	int	rcvCount ;		// length of message received through socket
 	int	sndCount ;		// length of message sent through socket
@@ -257,8 +283,8 @@ void	hdlSocket( int queueKey, int workSockfd) {
 	parentPID	=	getppid() ;
 	knxLog( myKnxLogger, progName, "%d: socket handler started", parentPID) ;
 	signal( SIGINT, sigHandler) ;
-	myEIB	=	eibOpen( 0x1051, 0, queueKey) ;
-	myAPN	=	eibAssignAPN( myEIB) ;
+	myEIB	=	eibOpen( cfgSenderAddr, 0x00, cfgQueueKey, progName, APN_RDWR) ;
+	myAPN	=	myEIB->apn ;
 	knxLog( myKnxLogger, progName, "%d->%d: myAPN := %d", parentPID, ownPID, myAPN) ;
 	/**
 	 * server-mode, primarily runnign on the Raspberry end
@@ -271,10 +297,9 @@ void	hdlSocket( int queueKey, int workSockfd) {
 	 */
 	fcntl( workSockfd, F_SETFL, fcntl( workSockfd, F_GETFL, 0) | O_NONBLOCK) ;
 	cycleCounter	=	0 ;
-	myAPN	=	myEIB->apn ;
 	while ( debugLevel >= 0) {
 		_debug( 1, progName, "cycleCounter := %d", cycleCounter++) ;
-		msgToSnd	=	eibReceive( myEIB, &msgBuf) ;
+		msgToSnd	=	eibReceiveMsg( myEIB, &msgBuf) ;
 		if ( msgToSnd != NULL) {
 			if ( msgToSnd->apn != myAPN && msgToSnd->apn != 0) {
 				_debug( 1, progName, "got message through receive-queue (apn: %d), will forward to socket",
@@ -296,7 +321,7 @@ void	hdlSocket( int queueKey, int workSockfd) {
 			if ( rcvCount == KNX_MSG_SIZE) {
 				_debug( 1, progName, "received a message through the socket, will add to receive-queue") ;
 				msgBuf.apn	=	myAPN ;
-				_eibPutReceive( myEIB, &msgBuf) ;
+				eibQueueMsg( myEIB, &msgBuf) ;
 			} else if ( rcvCount == 1) {
 				_debug( 1, progName, "received single byte, will close socket") ;
 				debugLevel	=	-1 ;
@@ -317,4 +342,3 @@ void	hdlSocket( int queueKey, int workSockfd) {
 
 void	help() {
 }
-

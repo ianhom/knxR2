@@ -152,9 +152,21 @@ char	dbPassword[64]	=	"*" ;
 void	sigHandler( int _sig) {
 	debugLevel	=	-1 ;
 }
+/**
+ *
+ */
+int	cfgQueueKey	=	10031 ;
+int	cfgSenderAddr	=	1 ;
+/**
+ *
+ */
 void	iniCallback( char *_block, char *_para, char *_value) {
 	_debug( 1, progName, "receive ini value block/paramater/value ... : %s/%s/%s\n", _block, _para, _value) ;
-	if ( strcmp( _block, "[knxtrace]") == 0) {
+	if ( strcmp( _block, "[knxglobals]") == 0) {
+		if ( strcmp( _para, "queueKey") == 0) {
+			cfgQueueKey	=	atoi( _value) ;
+		}
+	} else if ( strcmp( _block, "[knxtrace]") == 0) {
 		if ( strcmp( _para , "dbHost") == 0) {
 			strcpy( dbHost, _value) ;
 		} else if ( strcmp( _para, "dbName") == 0) {
@@ -191,7 +203,6 @@ int	main( int argc, char *argv[]) {
 			node	*actData ;
 			int	rcvdBytes ;
 			int	monitor	=	0 ; 		// default: no message monitoring
-			int	queueKey	=	10031 ;
 	unsigned        int     control ;
 	unsigned        int     addressType ;
 	unsigned        int     routingCount ;
@@ -236,7 +247,7 @@ int	main( int argc, char *argv[]) {
 		int	shmCRFId ;
 		int	shmCRFSize	=	65536 * sizeof( int) ;
 		int	*crf ;
-	char	iniFilename[]	=	"/etc/knx.d/knx.ini" ;
+	char	iniFilename[]	=	"knx.ini" ;
 	/**
 	 *
 	 */
@@ -257,7 +268,7 @@ int	main( int argc, char *argv[]) {
 			debugLevel	=	atoi( optarg) ;
 			break ;
 		case	'Q'	:
-			queueKey	=	atoi( optarg) ;
+			cfgQueueKey	=	atoi( optarg) ;
 			break ;
 		case	'f'	:
 			strcpy( myTraceFileName, optarg) ;
@@ -325,15 +336,16 @@ int	main( int argc, char *argv[]) {
 	/**
 	 *
 	 */
-	printf( "opening queue key %d\n", queueKey) ;
-	myEIB	=	eibOpen( 0x0002, 0, queueKey) ;
+	printf( "opening queue key %d\n", cfgQueueKey) ;
+	myEIB	=	eibOpen( cfgSenderAddr, 0x00, cfgQueueKey, progName, APN_RDONLY) ;
 	sleepTimer	=	0 ;
 	cycleCounter	=	0 ;
 	while ( debugLevel >= 0) {
 		_debug( 1, progName, "cycleCounter := %d", cycleCounter++) ;
-		myMsg	=	eibReceive( myEIB, &myMsgBuf) ;
+		myMsg	=	eibReceiveMsg( myEIB, &myMsgBuf) ;
 		if ( myMsg != NULL) {
 			if ( myMsg->apn != 0) {
+				_debug( 1, progName, "frameType := %d", myMsg->frameType) ;
 				switch ( myMsg->frameType) {
 				case	eibDataFrame	:
 					sleepTimer	=	0 ;

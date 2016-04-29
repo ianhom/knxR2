@@ -19,3 +19,14 @@ dbName		=	knxLog
 [hdlheating]
 
 [hdlheatpump]
+
+[sendb1]
+senderAddr	=	1025
+
+[sendb2]
+
+[sendu16]
+senderAddr	=	1025
+
+[sendf16]
+senderAddr	=	1033

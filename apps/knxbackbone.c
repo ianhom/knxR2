@@ -25,18 +25,24 @@
  *
  * EIB/KNX backbone process
  *
- * knxbackbone bridges a "simulated" knx-bus to a "real-world" knx-bus
- * through a TPUART or, in
- * a purely simulated mode, e.g. on Mac OS, acts as a virtual TPUART which copies
- * everything supposed to be transmitted to the real-orld to the incoming side.
- * the communication towards other modules happens through two separate message queue.
- * the message queues contain a complete message (see: eib.h)
+ * knxbackbone as such does not do more but create a shared memory segment
+ * which serves as the central buffer for all EIB messages.
+ * Accessing this central buffer happens through the usage of functions in
+ * the "eib" library, which provides all necessary functions for opening
+ * and closing connections to the EIB messagign world as well as sending
+ * and receiving messages.
+ *
+ * When a programm wants to gain access to EIB messages, be it for sending,
+ * writing or both, it opens a connection to the knx-backbone through a call to
+ * "eibOpen".
+ *
  *
  * Revision history
  *
  * Date		Rev.	Who	what
  * -----------------------------------------------------------------------------
  * 2016-03-02	PA1	khw	inception;
+ * 2016-04-26	PA2	khw	added explanation of the mechanism;
  *
  */
 #include	<stdio.h>
@@ -81,38 +87,29 @@ knxLogHdl	*myKnxLogger ;
 void	sigHandler( int _sig) {
 	debugLevel	=	-1 ;
 }
+/**
+ *
+ */
+int	cfgQueueKey	=	10031 ;
+/**
+ *
+ */
 void	iniCallback( char *_block, char *_para, char *_value) {
 	_debug( 1, progName, "receive ini value block/paramater/value ... : %s/%s/%s\n", _block, _para, _value) ;
+	if ( strcmp( _block, "[knxglobals]") == 0) {
+		if ( strcmp( _para, "queueKey") == 0) {
+			cfgQueueKey	=	atoi( _value) ;
+		}
+	}
 }
 /**
  *
  */
 int	main( int argc, char *argv[]) {
 	eibHdl	*myEIB ;
-	int	myAPN	=	0 ;
-	knxMsg	*msgToSnd, msgBuf ;
-	knxMsg	msgRcv ;
-	int	sendingByte ;
 	int	opt ;
-	int	sleepTimer	=	0 ;
-	int	incompleteMsg ;
-	int	rcvdLength ;
-	int	sentLength ;
-	int	expLength ;
-	int	queueKey	=	10031 ;;
-	bridgeModeRcv	rcvMode ;
-	bridgeModeSnd	sndMode ;
-	char	mode[]={'8','e','1',0};
-	int	cport_nr	=	22 ;	// /dev/ttyS0 (COM1 on windows) */
-	int	bdrate		=	19200 ;	// 9600 baud */
-	int	rcvdBytes ;
-	unsigned	char	buf, bufp ;
-	unsigned	char	*rcvData ;
-	unsigned	char	*sndData ;
-	ini	*myIni ;
-	int	cycleCounter ;
-	knxOpMode	opMode	=	opModeMaster ;
-	char	iniFilename[]	=	"/etc/knx.d/knx.ini" ;
+	int	i ;
+	char	iniFilename[]	=	"knx.ini" ;
 	/**
 	 * setup the shared memory for EIB Receiving Buffer
 	 */
@@ -125,7 +122,7 @@ int	main( int argc, char *argv[]) {
 	/**
 	 *
 	 */
-	debugLevel	=	99 ;
+	debugLevel	=	0 ;
 	iniFromFile( iniFilename, iniCallback) ;
 	/**
 	 * get command line options
@@ -136,7 +133,7 @@ int	main( int argc, char *argv[]) {
 			debugLevel	=	atoi( optarg) ;
 			break ;
 		case	'Q'	:
-			queueKey	=	atoi( optarg) ;
+			cfgQueueKey	=	atoi( optarg) ;
 			break ;
 		case	'?'	:
 			help() ;
@@ -152,9 +149,23 @@ int	main( int argc, char *argv[]) {
 	 *
 	 */
 	if ( createPIDFile( progName, "", ownPID)) {
-		myEIB	=	eibOpen( 0x0000, IPC_CREAT, queueKey) ;
+		myEIB	=	eibOpen( 0x0000, IPC_CREAT, cfgQueueKey, progName, 0) ;
 		while ( debugLevel >= 0) {
-			sleep( 0) ;
+			if ( debugLevel > 0) {
+				eibDumpIPCData( myEIB) ;
+				sleep( 5) ;
+			} else {
+				sleep( 5) ;
+			}
+			for ( i=1 ; i<EIB_MAX_APN; i++) {
+				if ( myEIB->shmKnxBus->apns[i] == i) {
+					myEIB->shmKnxBus->apnDesc[i].wdCount	+=	myEIB->shmKnxBus->wdIncr ;
+					myEIB->shmKnxBus->wdIncr	=	0 ;
+					if ( myEIB->shmKnxBus->apnDesc[i].wdCount > 60) {
+						eibForceCloseAPN( myEIB, i) ;
+					}
+				}
+			}
 		}
 		eibClose( myEIB) ;
 		deletePIDFile( progName, "", ownPID) ;

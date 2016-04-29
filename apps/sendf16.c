@@ -21,15 +21,16 @@
  */
 /**
  *
- * readbit.c
+ * sendfloat.c
  *
- * read a bit (DPT1.xxx) value from a group address
+ * send a half-float value (DPT 9.xxx) to a given group address
  *
  * Revision history
  *
  * Date		Rev.	Who	what
  * ----------------------------------------------------------------------------
- * 2015-11-26	PA1	khw	inception; derived from sendFloat.c
+ * 2015-11-26	PA1	khw	inception; derived from sendfloat.c
+ * 2015-12-10	PA2	khw	adopted to new structure
  *
  */
 #include	<stdio.h>
@@ -37,42 +38,76 @@
 #include	<string.h>
 #include	<strings.h>
 #include	<unistd.h>
+#include	<sys/msg.h>
 
+#include	"debug.h"
 #include	"eib.h"
+#include	"knxtpbridge.h"
 #include	"nodeinfo.h"
 #include	"mylib.h"
+#include	"inilib.h"
 
 extern	void	help() ;
 
 char	progName[64] ;
 int	debugLevel	=	0 ;
-
+/**
+ *
+ */
+int	cfgQueueKey	=	10031 ;
+int	cfgSenderAddr	=	1 ;
+/**
+ *
+ */
+void	iniCallback( char *_block, char *_para, char *_value) {
+	_debug( 1, progName, "receive ini value block/paramater/value ... : %s/%s/%s\n", _block, _para, _value) ;
+	if ( strcmp( _block, "[knxglobals]") == 0) {
+		if ( strcmp( _para, "queueKey") == 0) {
+			cfgQueueKey	=	atoi( _value) ;
+		}
+	} else if ( strcmp( _block, "[sendf16]") == 0) {
+		if ( strcmp( _para, "senderAddr") == 0) {
+			cfgSenderAddr	=	atoi( _value) ;
+		}
+	}
+}
+/**
+ *
+ */
 int main( int argc, char *argv[]) {
 			eibHdl		*myEIB ;
+			int		myAPN	=	0 ;
 			short		group ;
 	unsigned	char		buf[16] ;
 			int		msgLen ;
 			int		opt ;
 			int		sender	=	0 ;
 			int		receiver	=	0 ;
-			int		value ;
+			float		value ;
 			int		repeat	=	0x20 ;
-			knxMsg		myMsg ;
+			char		iniFilename[]	=	"knx.ini" ;
 	/**
 	 *
 	 */
 	strcpy( progName, *argv) ;
 	printf( "%s: starting up ... \n", progName) ;
 	/**
+	 *
+	 */
+	iniFromFile( iniFilename, iniCallback) ;
+	/**
 	 * get command line options
 	 */
-	while (( opt = getopt( argc, argv, "D:s:r:v:n?")) != -1) {
+	while (( opt = getopt( argc, argv, "D:Q:s:r:v:n?")) != -1) {
 		switch ( opt) {
 		case	'D'	:
 			debugLevel	=	atoi( optarg) ;
 			break ;
+		case	'Q'	:
+			cfgQueueKey	=	atoi( optarg) ;
+			break ;
 		case	's'	:
-			sender	=	atoi( optarg) ;
+			cfgSenderAddr	=	atoi( optarg) ;
 			break ;
 		case	'r'	:
 			receiver	=	atoi( optarg) ;
@@ -81,7 +116,7 @@ int main( int argc, char *argv[]) {
 			repeat	=	0x00 ;
 			break ;
 		case	'v'	:
-			value	=	atoi( optarg) ;
+			value	=	atof( optarg) ;
 			break ;
 		case	'?'	:
 			help() ;
@@ -96,19 +131,12 @@ int main( int argc, char *argv[]) {
 	/**
 	 *
 	 */
-	if ( sender != 0 && receiver != 0) {
+	if ( cfgSenderAddr != 0 && receiver != 0) {
 		/**
 		 *
 		 */
-		myEIB	=	eibOpen( sender, 0x00, 10031) ;
-		myMsg.apn	=	myEIB->apn ;
-		myMsg.control	=	0x9d | repeat ;
-		myMsg.sndAddr	=	sender ;
-		myMsg.rcvAddr	=	receiver ;
-		myMsg.info	=	0xe0 | 0x01 ;
-		myMsg.mtext[0]	=	0x00 ;
-		myMsg.mtext[1]	=	0x80 | ( value & 0x01) ;
-		_eibPutReceive( myEIB, &myMsg) ;
+		myEIB	=	eibOpen( cfgSenderAddr, 0, cfgQueueKey, progName, APN_WRONLY) ;
+		eibWriteHalfFloat( myEIB, receiver, value, 1) ;
 		eibClose( myEIB) ;
 	} else {
 		printf( "%s: invalid sender and/or receiver address\n", progName) ;
@@ -124,4 +152,3 @@ void	help() {
 	printf( "sends an arbitrary bit <value> from node <senderAddr> to <receiverAddr>h \n") ;
 	printf( "receiver address is basically the group address \n") ;
 }
-

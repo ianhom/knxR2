@@ -50,6 +50,7 @@
 #include	"nodeinfo.h"
 #include	"mylib.h"
 #include	"knxlog.h"
+#include	"inilib.h"
 
 typedef	enum	modeSolar	{
 			MODE_INVALID	=	-1
@@ -58,9 +59,10 @@ typedef	enum	modeSolar	{
 		,	MODE_BUFFER	=	2
 	}	modeSolar ;
 
-#define	TEMP_COL_MIN	40
+#define	TEMP_COL_MIN_ON	55
+#define	TEMP_COL_MIN_OFF	50
 #define	TEMP_WW_OFF	60
-#define	TEMP_HB_OFF	60
+#define	TEMP_HB_OFF	50
 
 #define	MISCHER_SOLAR_PUFFER	0
 #define	MISCHER_SOLAR_WASSER	1
@@ -86,7 +88,29 @@ char    *modeText[3]    =       {
 	,       "heating water tank"
 	,       "heating buffer"
 	} ;
-
+/**
+ *
+ */
+int	cfgQueueKey	=	10031 ;
+int	cfgSenderAddr	=	1 ;
+/**
+ *
+ */
+void	iniCallback( char *_block, char *_para, char *_value) {
+	_debug( 1, progName, "receive ini value block/paramater/value ... : %s/%s/%s\n", _block, _para, _value) ;
+	if ( strcmp( _block, "[knxglobals]") == 0) {
+		if ( strcmp( _para, "queueKey") == 0) {
+			cfgQueueKey	=	atoi( _value) ;
+		}
+	} else if ( strcmp( _block, "[hdlsolar]") == 0) {
+		if ( strcmp( _para, "senderAddr") == 0) {
+			cfgSenderAddr	=	atoi( _value) ;
+		}
+	}
+}
+/**
+ *
+ */
 int	main( int argc, char *argv[]) {
 		eibHdl	*myEIB ;
 		int	status		=	0 ;
@@ -116,7 +140,6 @@ int	main( int argc, char *argv[]) {
 		int	tempHBu ;				// point to node["TempHBu"], HeatingBuffer
 		int	tempHBm ;				// point to node["TempHBu"], HeatingBuffer
 		int	tempCol1 ;				// point to node["TempCol1"], SolarCollector
-		int	queueKey	=	10031 ;
 		time_t	lastOffTime	=	0L ;
 		time_t	lastOnTime	=	0L ;
 	/**
@@ -147,16 +170,21 @@ int	main( int argc, char *argv[]) {
 	/**
 	 * define shared memory segment #3: cross-referecne table
  	 */
-		key_t	shmCRFKey	=	SHM_CRF_KEY ;
-		int	shmCRFFlg	=	IPC_CREAT | 0600 ;
-		int	shmCRFId ;
-		int	shmCRFSize	=	65536 * sizeof( int) ;
-		int	*crf ;
+			key_t	shmCRFKey	=	SHM_CRF_KEY ;
+			int	shmCRFFlg	=	IPC_CREAT | 0600 ;
+			int	shmCRFId ;
+			int	shmCRFSize	=	65536 * sizeof( int) ;
+			int	*crf ;
+			char		iniFilename[]	=	"knx.ini" ;
 	/**
 	 *
 	 */
 	strcpy( progName, *argv) ;
 	_debug( 0, progName, "starting up ...") ;
+	/**
+	 *
+	 */
+	iniFromFile( iniFilename, iniCallback) ;
 	/**
 	 * get command line options
 	 */
@@ -169,7 +197,7 @@ int	main( int argc, char *argv[]) {
 			debugLevel      =       atoi( optarg) ;
 			break ;
 		case    'Q'     :
-			queueKey        =       atoi( optarg) ;
+			cfgQueueKey        =       atoi( optarg) ;
 			break ;
 		/**
 		 * application specific options
@@ -259,8 +287,8 @@ int	main( int argc, char *argv[]) {
 	/**
 	 *
 	 */
-	myEIB	=	eibOpen( 0x01234, 0, 10031) ;
-	while ( 1) {
+	myEIB	=	eibOpen( cfgSenderAddr, 0x00, cfgQueueKey, progName, APN_WRONLY) ;
+	while ( debugLevel >= 0) {
 		/**
 		 * dump all input data for this "MES"
 		 */
@@ -288,25 +316,26 @@ int	main( int argc, char *argv[]) {
 			changeMode	=	0 ;
 			switch( mode) {
 			case	MODE_STOPPED	:
-				if ( diffTempCollWW >= 15.0 && tempWW < tempWWOff && tempCol >= TEMP_COL_MIN) {
+				if ( diffTempCollWW >= 15.0 && tempWW < tempWWOff && tempCol >= TEMP_COL_MIN_ON) {
 					mode	=	MODE_WATER ;
-				} else if ( diffTempCollHB >= 10.0 && tempHB < tempHBOff && tempCol >=TEMP_COL_MIN) {
+				} else if ( diffTempCollHB >= 10.0 && tempHB < tempHBOff && tempCol >=TEMP_COL_MIN_ON) {
 					mode	=	MODE_BUFFER ;
 				} else {
 					mode	=	MODE_STOPPED ;
 				}
 				break ;
 			case	MODE_WATER	:
-				if ( diffTempCollWW <= 20.0 || tempWW >= tempWWOff || tempCol < TEMP_COL_MIN) {
+				if ( diffTempCollWW <= 5.0 || tempWW >= tempWWOff || tempCol < TEMP_COL_MIN_OFF) {
 					mode	=	MODE_STOPPED ;
 					changeMode	=	1 ;
-				} else {
 				}
 				break ;
 			case	MODE_BUFFER	:
-				if ( diffTempCollHB <= 5.0 || tempHB >= tempHBOff || tempCol < TEMP_COL_MIN) {
+				if ( diffTempCollHB <= 5.0 || tempHB >= tempHBOff || tempCol < TEMP_COL_MIN_OFF) {
 					mode	=	MODE_STOPPED ;
 					changeMode	=	1 ;
+				} else if ( diffTempCollWW >= 15.0 && tempWW < tempWWOff && tempCol >= TEMP_COL_MIN_ON) {
+					mode	=	MODE_STOPPED ;
 				}
 				break ;
 			}
@@ -336,6 +365,7 @@ void	setModeStopped( eibHdl *_myEIB, node *data) {
         if ( currentMode != MODE_STOPPED) {
                 reset   =       1 ;
         } else if ( data[pumpSolar].val.i != PUMPE_SOLAR_AUS) {
+		_debug( 1, progName, "ALERT ... Solar Heating Setting (on/off) is WRONG ...") ;
                 knxLog( myKnxLogger, progName, "ALERT ... Solar Heating Setting (on/off) is WRONG ...") ;
                 reset   =       1 ;
 //	} else if ( data[valveSolar].val.i != MISCHER_SOLAR_PUFFER) {
@@ -344,7 +374,9 @@ void	setModeStopped( eibHdl *_myEIB, node *data) {
         }
         if ( reset) {
                 knxLog( myKnxLogger, progName, "Setting mode OFF") ;
-                eibWriteBit( _myEIB, data[pumpSolar].knxGroupAddr, PUMPE_SOLAR_AUS, 0) ;
+		if ( data[pumpSolar].val.i != PUMPE_SOLAR_AUS) {
+                	eibWriteBit( _myEIB, data[pumpSolar].knxGroupAddr, PUMPE_SOLAR_AUS, 0) ;
+		}
 //		sleep( 1) ;
 //		eibWriteBit( _myEIB, data[valveSolar].knxGroupAddr, MISCHER_SOLAR_PUFFER, 0) ;
                 currentMode     =       MODE_STOPPED ;
@@ -356,17 +388,23 @@ void	setModeWater( eibHdl *_myEIB, node *data) {
         if ( currentMode != MODE_WATER) {
                 reset   =       1 ;
         } else if ( data[pumpSolar].val.i != PUMPE_SOLAR_EIN) {
+		_debug( 1, progName, "ALERT ... Solar Heating Setting (on/off) is WRONG ...") ;
                 knxLog( myKnxLogger, progName, "ALERT ... Solar Heating Setting (on/off) is WRONG ...") ;
                 reset   =       1 ;
         } else if ( data[valveSolar].val.i != MISCHER_SOLAR_WASSER) {
+		_debug( 1, progName, "ALERT ... Solar Heating Setting (valve) is WRONG ...") ;
                 knxLog( myKnxLogger, progName, "ALERT ... Solar Heating Setting (valve) is WRONG ...") ;
                 reset   =       1 ;
         }
         if ( reset) {
-                knxLog( myKnxLogger, progName, "Setting mode OFF") ;
-                eibWriteBit( _myEIB, data[pumpSolar].knxGroupAddr, PUMPE_SOLAR_EIN, 0) ;
-		sleep( 1) ;
-                eibWriteBit( _myEIB, data[valveSolar].knxGroupAddr, MISCHER_SOLAR_WASSER, 0) ;
+        	knxLog( myKnxLogger, progName, "Setting mode OFF") ;
+		if ( data[pumpSolar].val.i != PUMPE_SOLAR_EIN) {
+                	eibWriteBit( _myEIB, data[pumpSolar].knxGroupAddr, PUMPE_SOLAR_EIN, 0) ;
+		}
+		if ( data[valveSolar].val.i != MISCHER_SOLAR_WASSER) {
+			sleep( 1) ;
+                	eibWriteBit( _myEIB, data[valveSolar].knxGroupAddr, MISCHER_SOLAR_WASSER, 0) ;
+		}
                 currentMode     =       MODE_WATER ;
         }
 }
@@ -376,17 +414,23 @@ void	setModeBuffer( eibHdl *_myEIB, node *data) {
         if ( currentMode != MODE_BUFFER) {
                 reset   =       1 ;
         } else if ( data[pumpSolar].val.i != PUMPE_SOLAR_EIN) {
+		_debug( 1, progName, "ALERT ... Solar Heating Setting (on/off) is WRONG ...") ;
                 knxLog( myKnxLogger, progName, "ALERT ... Solar Heating Setting (on/off) is WRONG ...") ;
                 reset   =       1 ;
         } else if ( data[valveSolar].val.i != MISCHER_SOLAR_PUFFER) {
+		_debug( 1, progName, "ALERT ... Solar Heating Setting (valve) is WRONG ...") ;
                 knxLog( myKnxLogger, progName, "ALERT ... Solar Heating Setting (valve) is WRONG ...") ;
                 reset   =       1 ;
         }
         if ( reset) {
                 knxLog( myKnxLogger, progName, "Setting mode OFF") ;
-                eibWriteBit( _myEIB, data[pumpSolar].knxGroupAddr, PUMPE_SOLAR_EIN, 0) ;
-		sleep( 1) ;
-                eibWriteBit( _myEIB, data[valveSolar].knxGroupAddr, MISCHER_SOLAR_PUFFER, 0) ;
+		if ( data[pumpSolar].val.i != PUMPE_SOLAR_EIN) {
+                	eibWriteBit( _myEIB, data[pumpSolar].knxGroupAddr, PUMPE_SOLAR_EIN, 0) ;
+		}
+		if ( data[valveSolar].val.i != MISCHER_SOLAR_PUFFER) {
+			sleep( 1) ;
+	                eibWriteBit( _myEIB, data[valveSolar].knxGroupAddr, MISCHER_SOLAR_PUFFER, 0) ;
+		}
                 currentMode     =       MODE_BUFFER ;
         }
 }

@@ -68,6 +68,7 @@
 #include	"nodeinfo.h"
 #include	"mylib.h"
 #include	"knxtpbridge.h"
+#include	"inilib.h"
 /**
  *
  */
@@ -92,6 +93,26 @@ void	sigHandler( int _sig) {
 /**
  *
  */
+int	cfgQueueKey	=	10031 ;
+int	cfgSenderAddr	=	1 ;
+/**
+ *
+ */
+void	iniCallback( char *_block, char *_para, char *_value) {
+	_debug( 1, progName, "receive ini value block/paramater/value ... : %s/%s/%s\n", _block, _para, _value) ;
+	if ( strcmp( _block, "[knxglobals]") == 0) {
+		if ( strcmp( _para, "queueKey") == 0) {
+			cfgQueueKey	=	atoi( _value) ;
+		}
+	} else if ( strcmp( _block, "[knxtpbridge]") == 0) {
+		if ( strcmp( _para, "senderAddr") == 0) {
+			cfgSenderAddr	=	atoi( _value) ;
+		}
+	}
+}
+/**
+ *
+ */
 int	main( int argc, char *argv[]) {
 	eibHdl	*myEIB ;
 	int	myAPN	=	0 ;
@@ -105,7 +126,6 @@ int	main( int argc, char *argv[]) {
 	int	rcvdLength ;
 	int	sentLength ;
 	int	expLength ;
-	int	queueKey	=	10031 ;;
 	bridgeModeRcv	rcvMode ;
 	bridgeModeSnd	sndMode ;
 	char	mode[]={'8','e','1',0};
@@ -120,6 +140,7 @@ int	main( int argc, char *argv[]) {
 	int	sending	=	0 ;
 	int	sndTimeout	=	0 ;
 	knxOpMode	opMode	=	opModeMaster ;
+	char	iniFilename[]	=	"knx.ini" ;
 	/**
 	 * setup the shared memory for EIB Receiving Buffer
 	 */
@@ -128,6 +149,10 @@ int	main( int argc, char *argv[]) {
 	setbuf( stdout, NULL) ;
 	strcpy( progName, *argv) ;
 	_debug( 0, progName, "starting up ...") ;
+	/**
+	 *
+	 */
+	iniFromFile( iniFilename, iniCallback) ;
 	/**
 	 * get command line options
 	 */
@@ -140,7 +165,7 @@ int	main( int argc, char *argv[]) {
 			opMode	=	opModeMaster ;
 			break ;
 		case	'Q'	:
-			queueKey	=	atoi( optarg) ;
+			cfgQueueKey	=	atoi( optarg) ;
 			break ;
 		case	'S'	:
 			opMode	=	opModeSlave ;
@@ -161,10 +186,10 @@ int	main( int argc, char *argv[]) {
 	myKnxLogger	=	knxLogOpen( IPC_CREAT) ;
 	knxLog( myKnxLogger, progName, "%d: starting up ...", ownPID) ;
 	if ( createPIDFile( progName, "", ownPID)) {
-		myEIB	=	eibOpen( 0x0000, 0, queueKey) ;
-		myAPN	=	eibAssignAPN( myEIB) ;
-		printf( "myAPN ..... %d \n", myAPN) ;
-		knxLog( myKnxLogger, progName, "%d: myAPN := %d", ownPID, myAPN) ;
+		myEIB	=	eibOpen( cfgSenderAddr, 0x00, cfgQueueKey, progName, APN_RDWR) ;
+		myAPN	=	myEIB->apn ;
+		printf( "myAPN ..... %d \n", myEIB->apn) ;
+		knxLog( myKnxLogger, progName, "%d: myAPN := %d", ownPID, myEIB->apn) ;
 		/**
 		 * open communication port
 		 */
@@ -191,7 +216,7 @@ int	main( int argc, char *argv[]) {
 			 * read a message to be send from the send queue
 			 * msgBuf collects messages
 			 */
-			if (( msgToSnd = eibReceive( myEIB, &msgBuf)) != NULL && debugLevel >= 0) {
+			if (( msgToSnd = eibReceiveMsg( myEIB, &msgBuf)) != NULL && debugLevel >= 0) {
 				/**
 				 * and put it into the received queue
 				 */
@@ -199,15 +224,15 @@ int	main( int argc, char *argv[]) {
 					_debug( 1, progName, "received message through the send-queue, will loop-back") ;
 					msgToSnd->apn	=	myAPN ;
 					msgToSnd->frameType	=	eibDataFrame ;
-					_eibPutReceive( myEIB, msgToSnd) ;
+					eibQueueMsg( myEIB, msgToSnd) ;
 				} else {
 					_debug( 1, progName, "received message through receive-queue (apn: %d), will not loop-back",
 									 msgToSnd->apn) ;
 				}
 			}
-			sleepTimer	=	SLEEP_TIME ;
+//			sleepTimer	=	SLEEP_TIME ;
 			_debug( 1, progName, "will go to sleep ... for %d seconds", sleepTimer) ;
-			sleep( sleepTimer) ;
+//			sleep( sleepTimer) ;
 		}
 #else
 		knxLog( myKnxLogger, progName, "%d: running in real bridging mode ... (on Raspberry?) RECEIVER", ownPID) ;
@@ -251,7 +276,7 @@ int	main( int argc, char *argv[]) {
 							msgRcv.apn	=	myAPN ;
 							msgRcv.control	=	buf ;
 							msgRcv.frameType	=	eibAckFrame ;
-							_eibPutReceive( myEIB, &msgRcv) ;
+							eibQueueMsg( myEIB, &msgRcv) ;
 						/**
 						 *  check for NACK frame
 						 */
@@ -259,7 +284,7 @@ int	main( int argc, char *argv[]) {
 							msgRcv.apn	=	myAPN ;
 							msgRcv.control	=	buf ;
 							msgRcv.frameType	=	eibNackFrame ;
-							_eibPutReceive( myEIB, &msgRcv) ;
+							eibQueueMsg( myEIB, &msgRcv) ;
 						/**
 						 *  check for BUSY frame
 						 */
@@ -267,7 +292,7 @@ int	main( int argc, char *argv[]) {
 							msgRcv.apn	=	myAPN ;
 							msgRcv.control	=	buf ;
 							msgRcv.frameType	=	eibBusyFrame ;
-							_eibPutReceive( myEIB, &msgRcv) ;
+							eibQueueMsg( myEIB, &msgRcv) ;
 						/**
 						 *  check for L_POLL_DATA frame
 						 */
@@ -282,7 +307,7 @@ int	main( int argc, char *argv[]) {
 							msgRcv.apn	=	myAPN ;
 							msgRcv.control	=	buf ;
 							msgRcv.frameType	=	eibDataConfirmFrame ;
-							_eibPutReceive( myEIB, &msgRcv) ;
+							eibQueueMsg( myEIB, &msgRcv) ;
 							sndConfirmed	=	1 ;
 							knxLog( myKnxLogger, progName, "received positive confirm") ;
 						/**
@@ -292,7 +317,7 @@ int	main( int argc, char *argv[]) {
 							msgRcv.apn	=	myAPN ;
 							msgRcv.control	=	buf ;
 							msgRcv.frameType	=	eibDataConfirmFrame ;
-							_eibPutReceive( myEIB, &msgRcv) ;
+							eibQueueMsg( myEIB, &msgRcv) ;
 							sndConfirmed	=	1 ;
 							knxLog( myKnxLogger, progName, "received negative confirm") ;
 						/**
@@ -302,7 +327,7 @@ int	main( int argc, char *argv[]) {
 							msgRcv.apn	=	myAPN ;
 							msgRcv.control	=	buf ;
 							msgRcv.frameType	=	eibTPUARTStateIndication ;
-							_eibPutReceive( myEIB, &msgRcv) ;
+							eibQueueMsg( myEIB, &msgRcv) ;
 						/**
 						 *  no valid frame start, consider data to be spurious
 						 */
@@ -350,7 +375,7 @@ int	main( int argc, char *argv[]) {
 						msgRcv.frameType	=	eibDataFrame ;
 						if (( msgRcv.checksum + msgRcv.ownChecksum) == 0xff) {
 							_debug( 1, progName, "Checksum ok ...") ;
-							_eibPutReceive( myEIB, &msgRcv) ;
+							eibQueueMsg( myEIB, &msgRcv) ;
 						} else {
 							_debug( 1, progName, "Checksum crappy ...") ;
 							_debug( 1, progName, "will not bridge this message") ;
@@ -364,7 +389,7 @@ int	main( int argc, char *argv[]) {
 			/**
 			 * IF there's a message to send
 			 */
-			if (( msgToSnd = eibReceive( myEIB, &msgBuf)) != NULL && debugLevel >= 0) {
+			if (( msgToSnd = eibReceiveMsg( myEIB, &msgBuf)) != NULL && debugLevel >= 0) {
 				/**
 				 * IF this message is not coming from my own port
 				 */

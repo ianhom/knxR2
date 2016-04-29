@@ -21,16 +21,15 @@
  */
 /**
  *
- * sendfloat.c
+ * readbit.c
  *
- * send a half-float value (DPT 9.xxx) to a given group address
+ * read a bit (DPT1.xxx) value from a group address
  *
  * Revision history
  *
  * Date		Rev.	Who	what
  * ----------------------------------------------------------------------------
- * 2015-11-26	PA1	khw	inception; derived from sendfloat.c
- * 2015-12-10	PA2	khw	adopted to new structure
+ * 2015-11-26	PA1	khw	inception; derived from sendFloat.c
  *
  */
 #include	<stdio.h>
@@ -38,11 +37,8 @@
 #include	<string.h>
 #include	<strings.h>
 #include	<unistd.h>
-#include	<sys/msg.h>
 
-#include	"debug.h"
 #include	"eib.h"
-#include	"knxtpbridge.h"
 #include	"nodeinfo.h"
 #include	"mylib.h"
 
@@ -57,11 +53,11 @@ int main( int argc, char *argv[]) {
 	unsigned	char		buf[16] ;
 			int		msgLen ;
 			int		opt ;
-			int		queueKey	=	10031 ;
 			int		sender	=	0 ;
 			int		receiver	=	0 ;
-			float		value ;
+			int		value ;
 			int		repeat	=	0x20 ;
+			knxMsg		myMsg ;
 	/**
 	 *
 	 */
@@ -70,13 +66,10 @@ int main( int argc, char *argv[]) {
 	/**
 	 * get command line options
 	 */
-	while (( opt = getopt( argc, argv, "D:Q:s:r:v:n?")) != -1) {
+	while (( opt = getopt( argc, argv, "D:s:r:v:n?")) != -1) {
 		switch ( opt) {
 		case	'D'	:
 			debugLevel	=	atoi( optarg) ;
-			break ;
-		case	'Q'	:
-			queueKey	=	atoi( optarg) ;
 			break ;
 		case	's'	:
 			sender	=	atoi( optarg) ;
@@ -88,7 +81,7 @@ int main( int argc, char *argv[]) {
 			repeat	=	0x00 ;
 			break ;
 		case	'v'	:
-			value	=	atof( optarg) ;
+			value	=	atoi( optarg) ;
 			break ;
 		case	'?'	:
 			help() ;
@@ -107,8 +100,15 @@ int main( int argc, char *argv[]) {
 		/**
 		 *
 		 */
-		myEIB	=	eibOpen( sender, 0, queueKey) ;
-		eibWriteHalfFloat( myEIB, receiver, value, 1) ;
+		myEIB	=	eibOpen( cfgSenderAddr, 0x00, cfgQueueKey, progName, APN_WRONLY) ;
+		myMsg.apn	=	myEIB->apn ;
+		myMsg.control	=	0x9d | repeat ;
+		myMsg.sndAddr	=	sender ;
+		myMsg.rcvAddr	=	receiver ;
+		myMsg.info	=	0xe0 | 0x01 ;
+		myMsg.mtext[0]	=	0x00 ;
+		myMsg.mtext[1]	=	0x80 | ( value & 0x01) ;
+		eibQueueMsg( myEIB, &myMsg) ;
 		eibClose( myEIB) ;
 	} else {
 		printf( "%s: invalid sender and/or receiver address\n", progName) ;

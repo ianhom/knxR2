@@ -43,10 +43,10 @@
 #include	<math.h>
 #include	<fcntl.h>
 #include	<sys/types.h>
-#include	<sys/ipc.h> 
-#include	<sys/shm.h> 
-#include	<sys/msg.h> 
-#include	<sys/sem.h> 
+#include	<sys/ipc.h>
+#include	<sys/shm.h>
+#include	<sys/msg.h>
+#include	<sys/sem.h>
 #include	<sys/socket.h>
 #include	<netinet/in.h>
 #include	<netdb.h>
@@ -59,6 +59,7 @@
 #include	"knxwebbridge.h"
 #include	"eib.h"
 #include	"mylib.h"
+#include	"inilib.h"
 /**
  *
  */
@@ -90,11 +91,30 @@ void	sigHandler( int _sig) {
 /**
  *
  */
+int	cfgQueueKey	=	10031 ;
+int	cfgSenderAddr	=	1 ;
+/**
+ *
+ */
+void	iniCallback( char *_block, char *_para, char *_value) {
+	_debug( 1, progName, "receive ini value block/paramater/value ... : %s/%s/%s\n", _block, _para, _value) ;
+	if ( strcmp( _block, "[knxglobals]") == 0) {
+		if ( strcmp( _para, "queueKey") == 0) {
+			cfgQueueKey	=	atoi( _value) ;
+		}
+	} else if ( strcmp( _block, "[knxwebbridge]") == 0) {
+		if ( strcmp( _para, "senderAddr") == 0) {
+			cfgSenderAddr	=	atoi( _value) ;
+		}
+	}
+}
+/**
+ *
+ */
 int	main( int argc, char *argv[]) {
 	eibHdl	*myEIB ;
 	pid_t	childProcessId, waitProcessId ;
 	int	opt ;
-	int	queueKey	=	10031 ;
 	int	portNo	=	10002 ;
 	int	sleepTimer	=	0 ;
 	char	serverName[64]	=	"" ;
@@ -113,6 +133,7 @@ int	main( int argc, char *argv[]) {
 	struct		sockaddr_in serv_addr, cli_addr;
 	int		n;
 	struct		hostent	*server ;
+	char	iniFilename[]	=	"knx.ini" ;
 	/**
 	 * setup the shared memory for EIB Receiving Buffer
 	 */
@@ -120,6 +141,10 @@ int	main( int argc, char *argv[]) {
 	setbuf( stdout, NULL) ;
 	strcpy( progName, *argv) ;
 	_debug( 0, progName, "starting up ...") ;
+	/**
+	 *
+	 */
+	iniFromFile( iniFilename, iniCallback) ;
 	/**
 	 * get command line options
 	 */
@@ -133,7 +158,7 @@ int	main( int argc, char *argv[]) {
 			portNo	=	atoi( optarg) ;
 			break ;
 		case	'Q'	:
-			queueKey	=	atoi( optarg) ;
+			cfgQueueKey	=	atoi( optarg) ;
 			break ;
 		case	'?'	:
 			help() ;
@@ -147,7 +172,7 @@ int	main( int argc, char *argv[]) {
 	}
 	myKnxLogger	=	knxLogOpen( 0) ;
 	knxLog( myKnxLogger, progName, "starting up ...") ;
-	myEIB	=	eibOpen( 0x1051, 0, queueKey) ;
+	myEIB	=	eibOpen( cfgSenderAddr, 0x00, cfgQueueKey, progName, APN_RDWR) ;
 	/**
 	 *
 	 */
@@ -239,11 +264,11 @@ void	hdlSocket( eibHdl *myEIB, int workSockfd) {
 	established	=	0 ;
 	while ( debugLevel >= 0) {
 		if ( established == 1) {
-			msgToSnd	=	eibReceive( myEIB, &msgBuf) ;
+			msgToSnd	=	eibReceiveMsg( myEIB, &msgBuf) ;
 			if ( msgToSnd != NULL) {
 				if ( msgToSnd->apn != 0) {
 					_debug( 1, progName, "%s: received a message through the receive-queue (apn: %d), will forward to socket", msgToSnd->apn) ;
-					
+
 					/**
 					 *
 					 */
@@ -380,4 +405,3 @@ unsigned char	*getPacket( unsigned char *_data, unsigned char *_buffer, int *_le
 
 void	help() {
 }
-

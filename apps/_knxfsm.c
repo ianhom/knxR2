@@ -6,9 +6,10 @@ void	hdlLPFunc( eibHdl *, knxMsg *) ;
  *
  */
 void	hdlMsg( eibHdl *_myEIB, knxMsg *myMsg) {
-	printf( "Message........: \n") ;
-	printf( "  From.........: %04x\n", myMsg->sndAddr) ;
-	printf( "  To...........: %04x\n", myMsg->rcvAddr) ;
+	printf( "Message ....... : \n") ;
+	printf( "  From ........ : %04x\n", myMsg->sndAddr) ;
+	printf( "  To .......... : %04x\n", myMsg->rcvAddr) ;
+	printf( "  Priority .... : %04x\n", myMsg->prio) ;
 	switch ( myMsg->prio) {
 	case	0x00	:		// System function
 		hdlSysFunc( _myEIB, myMsg) ;
@@ -53,6 +54,9 @@ void	hdlSysFunc( eibHdl *_myEIB, knxMsg *myMsg) {
 			break ;
 		case	0x02	:	// GroupValueWrite
 			printf( "GroupValueWrite\n") ;
+			if ( myCB.cbGroupValueWrite != NULL) {
+				myCB.cbGroupValueWrite( _myEIB, myMsg) ;
+			}
 			break ;
 		case	0x03	:	// IndividualAddressWrite
 			printf( "IndividualAddrWrite\n") ;
@@ -175,6 +179,9 @@ void	hdlLPFunc( eibHdl *_myEIB, knxMsg *myMsg) {
 		switch ( myMsg->apci) {
 		case	0x02	:	// groupValueWrite
 			printf( "GroupValueWrite\n") ;
+			if ( myCB.cbGroupValueWrite != NULL) {
+				myCB.cbGroupValueWrite( _myEIB, myMsg) ;
+			}
 			break ;
 		}
 		break ;
@@ -182,6 +189,9 @@ void	hdlLPFunc( eibHdl *_myEIB, knxMsg *myMsg) {
 		switch ( myMsg->apci) {
 		case	0x02	:	// groupValueWrite
 			printf( "GroupValueWrite\n") ;
+			if ( myCB.cbGroupValueWrite != NULL) {
+				myCB.cbGroupValueWrite( _myEIB, myMsg) ;
+			}
 			break ;
 		}
 		break ;

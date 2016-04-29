@@ -23,7 +23,7 @@
  *
  * hdlheatpump.c
  *
- * handling for "our" pellet stove
+ * Handling for the heatpump, which can heat up the buffer and the water tank.
  *
  * Revision history
  *
@@ -31,7 +31,7 @@
  * ----------------------------------------------------------------------------
  * 2015-12-14	PA1	khw	copied form hdlpellet.c and modified;
  * 2016-01-12	PA2	khw	adapted to new architecture of eib.c;
- * 2016-01-25	PA2	khw	added option for waiting time after startup;
+ * 2016-01-25	PA3	khw	added option for waiting time after startup;
  *
  */
 #include	<stdio.h>
@@ -41,15 +41,16 @@
 #include	<strings.h>
 #include	<time.h>
 #include	<sys/types.h>
-#include	<sys/ipc.h> 
-#include	<sys/shm.h> 
-#include	<sys/msg.h> 
+#include	<sys/ipc.h>
+#include	<sys/shm.h>
+#include	<sys/msg.h>
 
 #include	"eib.h"
 #include	"debug.h"
 #include	"nodeinfo.h"
 #include	"mylib.h"
 #include	"knxlog.h"
+#include	"inilib.h"
 
 typedef	enum	modeHP	{
 			MODE_INVALID	=	-1
@@ -73,19 +74,46 @@ extern	void	setModeBuffer( eibHdl *, node *) ;
 extern	void	help() ;
 
 char	progName[64] ;
-int	debugLevel	=	0 ;
 knxLogHdl	*myKnxLogger ;
 int	currentMode ;
 
 int	heatPump ;
 int	valvePelletStove ;
-
+/**
+ *
+ */
+char	*modeText[3]	=	{
+		"not working"
+	,	"heating water tank"
+	,	"heating buffer"
+	} ;
+/**
+ *
+ */
+int	cfgQueueKey	=	10031 ;
+int	cfgSenderAddr	=	1 ;
+/**
+ *
+ */
+void	iniCallback( char *_block, char *_para, char *_value) {
+	_debug( 1, progName, "receive ini value block/paramater/value ... : %s/%s/%s\n", _block, _para, _value) ;
+	if ( strcmp( _block, "[knxglobals]") == 0) {
+		if ( strcmp( _para, "queueKey") == 0) {
+			cfgQueueKey	=	atoi( _value) ;
+		}
+	} else if ( strcmp( _block, "[hdlheatpump]") == 0) {
+		if ( strcmp( _para, "senderAddr") == 0) {
+			cfgSenderAddr	=	atoi( _value) ;
+		}
+	}
+}
+/**
+ *
+ */
 int	main( int argc, char *argv[]) {
 		eibHdl	*myEIB ;
 		int	status		=	0 ;
 			int		opt ;
-		time_t	actTime ;
-	struct	tm	*myTime ;
 		char	timeBuffer[64] ;
 	/**
 	 *
@@ -110,11 +138,13 @@ int	main( int argc, char *argv[]) {
 								// WarmWater
 		int	tempHBu ;				// point to node["TempHBu"],
 								// HeatingBuffer
+		int	tempHBm ;				// point to node["TempHBu"],
+								// HeatingBuffer
 		time_t	lastOffTime	=	0L ;
 		time_t	lastOnTime	=	0L ;
 	/**
 	 * define shared memory segment #0: COM Table
- 	 */
+	 */
 		key_t	shmCOMKey	=	SHM_COM_KEY ;
 		int	shmCOMFlg	=	IPC_CREAT | 0600 ;
 		int	shmCOMId ;
@@ -122,7 +152,7 @@ int	main( int argc, char *argv[]) {
 		int	*sizeTable ;
 	/**
 	 * define shared memory segment #1: OPC Table with buffer
- 	 */
+	 */
 		key_t	shmOPCKey	=	SHM_OPC_KEY ;
 		int	shmOPCFlg	=	IPC_CREAT | 0600 ;
 		int	shmOPCId ;
@@ -130,36 +160,47 @@ int	main( int argc, char *argv[]) {
 		node	*data ;
 	/**
 	 * define shared memory segment #2: KNX Table with buffer
- 	 */
-		key_t	shmKNXKey	=	SHM_KNX_KEY ;
-		int	shmKNXFlg	=	IPC_CREAT | 0600 ;
-		int	shmKNXId ;
-		int	shmKNXSize	=	65536 * sizeof( float) ;
-		float	*floats ;
-		int	*ints ;
+	 */
+			key_t	shmKNXKey	=	SHM_KNX_KEY ;
+			int	shmKNXFlg	=	IPC_CREAT | 0600 ;
+			int	shmKNXId ;
+			int	shmKNXSize	=	65536 * sizeof( float) ;
+			float	*floats ;
+			int	*ints ;
 	/**
 	 * define shared memory segment #2: KNX Table with buffer
- 	 */
-		key_t	shmCRFKey	=	SHM_CRF_KEY ;
-		int	shmCRFFlg	=	IPC_CREAT | 0600 ;
-		int	shmCRFId ;
-		int	shmCRFSize	=	65536 * sizeof( int) ;
-		int	*crf ;
+	 */
+			key_t	shmCRFKey	=	SHM_CRF_KEY ;
+			int	shmCRFFlg	=	IPC_CREAT | 0600 ;
+			int	shmCRFId ;
+			int	shmCRFSize	=	65536 * sizeof( int) ;
+			int	*crf ;
+			time_t		actTime ;
+	struct	tm			myTime ;
+			int		timerMode	=	0 ;
+			char		iniFilename[]	=	"knx.ini" ;
 	/**
 	 *
 	 */
 	strcpy( progName, *argv) ;
 	printf( "%s: starting up ... \n", progName) ;
 	/**
+	 *
+	 */
+	iniFromFile( iniFilename, iniCallback) ;
+	/**
 	 * get command line options
 	 */
-	while (( opt = getopt( argc, argv, "D:d:wb?")) != -1) {
+	while (( opt = getopt( argc, argv, "D:Q:d:wb?")) != -1) {
 		switch ( opt) {
 		case	'D'	:
-			startupDelay	=	atoi( optarg) ;
+			debugLevel	=	atoi( optarg) ;
+			break ;
+		case	'Q'	:
+			cfgQueueKey	=	atoi( optarg) ;
 			break ;
 		case	'd'	:
-			debugLevel	=	atoi( optarg) ;
+			startupDelay	=	atoi( optarg) ;
 			break ;
 		case	'w'	:
 			hdlWater	=	1 ;
@@ -210,6 +251,7 @@ int	main( int argc, char *argv[]) {
 	_debug( 1, progName, "valvePelletStove at index ......: %d", valvePelletStove) ;
 	tempWWu		=	getEntry( data, lastDataIndexC, "TempWWu") ;
 	tempHBu		=	getEntry( data, lastDataIndexC, "TempPSu") ;
+	tempHBm		=	getEntry( data, lastDataIndexC, "TempPSm") ;
 	/**
 	 * try to determine the current mode of the pellet-module
 	 */
@@ -227,7 +269,34 @@ int	main( int argc, char *argv[]) {
 	/**
 	 *
 	 */
-	while ( 1) {
+	myEIB	=	eibOpen( cfgSenderAddr, 0, cfgQueueKey, progName, APN_WRONLY) ;
+	while ( debugLevel >= 0) {
+		/**
+		 *
+		 */
+		actTime	=	time( NULL) ;
+		myTime	=	*localtime( &actTime) ;
+		timerMode	=	0 ;
+		switch ( myTime.tm_wday) {
+		case	6	:		// saturday
+			if ( myTime.tm_hour >= 5 && myTime.tm_hour <= 12) {
+				timerMode	=	1 ;
+			}
+			break ;
+		case	0	:		// sunday
+			if ( myTime.tm_hour >= 7 && myTime.tm_hour <= 12) {
+				timerMode	=	1 ;
+			}
+			break ;
+		default	:			// monday - friday
+			if ( myTime.tm_hour >= 4 && myTime.tm_hour <= 8) {
+				timerMode	=	1 ;
+			} else if ( myTime.tm_hour >= 19 && myTime.tm_hour <= 21) {
+				timerMode	=	1 ;
+			}
+			break ;
+		}
+		_debug( 1, progName, "timer mode .................... : %d", timerMode) ;
 		/**
 		 * dump all input data for this "MES"
 		 */
@@ -240,7 +309,13 @@ int	main( int argc, char *argv[]) {
 		changeMode	=	1 ;
 		lastMode	=	mode ;
 		tempWW	=	data[tempWWu].val.f ;
-		tempHB	=	data[tempHBu].val.f ;
+		tempHB	=	( data[tempHBu].val.f + data[tempHBm].val.f) / 2 ;
+		_debug( 1, progName, "week day (0= sun, ... 6=sat)... : %d", myTime.tm_wday) ;
+		_debug( 1, progName, "hour .......................... : %d", myTime.tm_hour) ;
+		_debug( 1, progName, "timer mode .................... : %d", timerMode) ;
+		_debug( 1, progName, "current mode .................. : %d:'%s'", currentMode, modeText[currentMode]) ;
+		_debug( 1, progName, "temp. warm water, actual ...... : %5.1f ( %5.1f ... %5.1f)", tempWW, tempWWOn, tempWWOff) ;
+		_debug( 1, progName, "temp. buffer, actual .......... : %5.1f ( %5.1f ... %5.1f)", tempHB, tempHBOn, tempHBOff) ;
 		while ( changeMode) {
 			changeMode	=	0 ;
 			switch( mode) {
@@ -294,7 +369,8 @@ void	setModeStopped( eibHdl *_myEIB, node *data) {
 	if ( currentMode != MODE_STOPPED) {
 		reset	=	1 ;
 	} else if ( data[heatPump].val.i != 0) {
-		knxLog( myKnxLogger, progName, "ALERT ... Pellet Stove Settings are WRONG ...") ;
+		_debug( 1, progName, "ALERT ... Heatpumnp Settings are WRONG ...") ;
+		knxLog( myKnxLogger, progName, "ALERT ... Heatpumnp Settings are WRONG ...") ;
 		reset	=	1 ;
 	}
 	if ( reset) {
@@ -308,8 +384,9 @@ void	setModeWater( eibHdl *_myEIB, node *data) {
 	int	reset	=	0 ;
 	if ( currentMode != MODE_WATER) {
 		reset	=	1 ;
-	} else if ( data[heatPump].val.i != 1 || data[valvePelletStove].val.i != VALVE_PS_WW) {
-		knxLog( myKnxLogger, progName, "ALERT ... Pellet Stove Settings are WRONG ...") ;
+	} else if ( data[heatPump].val.i != 1 || data[valvePelletStove].val.i != VALVE_PS_HB) {
+		_debug( 1, progName, "ALERT ... Heatpumnp Settings are WRONG ...") ;
+		knxLog( myKnxLogger, progName, "ALERT ... Heatpumnp Settings are WRONG ...") ;
 		reset	=	1 ;
 	}
 	if ( reset) {
@@ -323,8 +400,9 @@ void	setModeBuffer( eibHdl *_myEIB, node *data) {
 	int	reset	=	0 ;
 	if ( currentMode != MODE_BUFFER) {
 		reset	=	1 ;
-	} else if ( data[heatPump].val.i != 1 || data[valvePelletStove].val.i != VALVE_PS_HB) {
-		knxLog( myKnxLogger, progName, "ALERT ... Pellet Stove Settings are WRONG ...") ;
+	} else if ( data[heatPump].val.i != 1 || data[valvePelletStove].val.i != VALVE_PS_WW) {
+		_debug( 1, progName, "ALERT ... Heatpumnp Settings are WRONG ...") ;
+		knxLog( myKnxLogger, progName, "ALERT ... Heatpumnp Settings are WRONG ...") ;
 		reset	=	1 ;
 	}
 	if ( reset) {

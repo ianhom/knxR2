@@ -51,7 +51,7 @@
 #include	"knxtpbridge.h"
 #include	"mylib.h"
 #include	"myxml.h"
-
+#include	"inilib.h"
 #include	"eib.h"		// rs232.c will differentiate:
 				// ifdef  __MAC__
 				// 	simulation
@@ -84,10 +84,29 @@ void	sigHandler( int _sig) {
 /**
  *
  */
+int	cfgQueueKey	=	10031 ;
+int	cfgSenderAddr	=	1 ;
+/**
+ *
+ */
+void	iniCallback( char *_block, char *_para, char *_value) {
+	_debug( 1, progName, "receive ini value block/paramater/value ... : %s/%s/%s\n", _block, _para, _value) ;
+	if ( strcmp( _block, "[knxglobals]") == 0) {
+		if ( strcmp( _para, "queueKey") == 0) {
+			cfgQueueKey	=	atoi( _value) ;
+		}
+	} else if ( strcmp( _block, "[knxmon]") == 0) {
+		if ( strcmp( _para, "senderAddr") == 0) {
+			cfgSenderAddr	=	atoi( _value) ;
+		}
+	}
+}
+/**
+ *
+ */
 int	main( int argc, char *argv[]) {
 		eibHdl	*myEIB ;
 		int	opt ;
-		int	queueKey	=	10031 ;
 		int	status		=	0 ;
 		int	sleepTimer	=	0 ;
 		int	i ;
@@ -162,6 +181,7 @@ int	main( int argc, char *argv[]) {
 			struct	tm	tm ;
 			int	lastSec	=	0 ;
 			int	lastMin	=	0 ;
+			char		iniFilename[]	=	"knx.ini" ;
 	/**
 	 *	END OF TEST SECTION
 	 */
@@ -170,12 +190,16 @@ int	main( int argc, char *argv[]) {
 	strcpy( progName, *argv) ;
 	_debug( 1, progName, "starting up ...") ;
 	/**
+	 *
+	 */
+	iniFromFile( iniFilename, iniCallback) ;
+	/**
 	 * get command line options
 	 */
 	while (( opt = getopt( argc, argv, "D:Q:mx:?")) != -1) {
 		switch ( opt) {
 		case	'Q'	:
-			queueKey	=	atoi( optarg) ;
+			cfgQueueKey	=	atoi( optarg) ;
 			break ;
 		case	'D'	:
 			debugLevel	=	atoi( optarg) ;
@@ -204,7 +228,7 @@ int	main( int argc, char *argv[]) {
 	opcData	=	getNodeTable( xmlObjFile, &objectCount) ;
 	opcDataSize	=	objectCount * sizeof( node) ;
 	for ( i=0 ; i<objectCount ; i++) {
-		_debug( 1, "%s ... %d \n", opcData[i].name, opcData[i].knxGroupAddr) ;
+		_debug( 1, "knxmon.c::main", "%s ... %d \n", opcData[i].name, opcData[i].knxGroupAddr) ;
 	}
 	/**
 	 * setup the shared memory for COMtable
@@ -313,20 +337,13 @@ int	main( int argc, char *argv[]) {
 	if ( debugLevel > 0) {
 		dumpDataAll( data, objectCount, (void *) floats) ;
 	}
-	myEIB	=	eibOpen( 0x0002, 0, queueKey) ;
+	myEIB	=	eibOpen( cfgSenderAddr, 0x00, cfgQueueKey, progName, APN_RDONLY) ;
+	_debug( 1, progName, "readIndex := %d", myEIB->readRcvIndex) ;
 	sleepTimer	=	0 ;
 	cycleCounter	=	0 ;
 	while ( debugLevel >= 0) {
 		_debug( 1, progName, "cycleCounter := %d", cycleCounter++) ;
-		if ( debugLevel > 10) {
-			t	=	time( NULL) ;
-			tm	=	*localtime( &t) ;
-			if ( tm.tm_sec != lastSec) {
-				lastSec	=	tm.tm_sec ;
-				dumpDataAll( data, objectCount, (void *) floats) ;
-			}
-		}
-		myMsg	=	eibReceive( myEIB, &myMsgBuf) ;
+		myMsg	=	eibReceiveMsg( myEIB, &myMsgBuf) ;
 		if ( myMsg != NULL) {
 			_debug( 1, progName, "received from origin ... %d", myMsg->apn) ;
 			sleepTimer	=	0 ;
@@ -338,15 +355,13 @@ int	main( int argc, char *argv[]) {
 			 * and we know about the receiving group address
 			 */
 			if ( myMsg->apn != 0 && crf[ myMsg->rcvAddr] != 0) {
-				if ( debugLevel >= 3) {
-					_debug( 1, progName, "received a known group address ... %d", myMsg->rcvAddr) ;
-				}
+				_debug( 3, progName, "received a known group address ... %d", myMsg->rcvAddr) ;
 				actData	=	&data[ crf[ myMsg->rcvAddr]] ;
-				if ( actData->log != 0) {
-					_debug( 1, progName, "will be logged ...") ;
-				} else {
-					_debug( 1, progName, "will *** NOT *** be logged ...") ;
-				}
+//				if ( actData->log != 0) {
+//					_debug( 1, progName, "will be logged ...") ;
+//				} else {
+//					_debug( 1, progName, "will *** NOT *** be logged ...") ;
+//				}
 				switch ( myMsg->tlc) {
 				case	0x00	:		// UDP
 				case	0x01	:		// NDP
@@ -379,16 +394,25 @@ int	main( int argc, char *argv[]) {
 				case	0x03	:		// NCD
 					break ;
 				}
-			} else {
+                                if ( debugLevel > 10) {
+                                        t       =       time( NULL) ;
+                                        tm	=	*localtime( &t) ;
+//                                      if ( tm.tm_sec != lastSec) {
+                                                lastSec	=	tm.tm_sec ;
+                                                dumpDataAll( data, objectCount, (void *) floats) ;
+//                                      }
+                                }
+			} else if ( myMsg->apn != 0 && crf[ myMsg->rcvAddr] != 0) {
 				_debug( 1, progName, "received an un-known group address [%5d]...", myMsg->rcvAddr) ;
-				_debug( 1, progName, "will *** NOT *** be logged ...") ;
+			} else {
+				_debug( 1, progName, "message with APN == 0!") ;
 			}
 		} else {
-			sleepTimer++ ;
-			if ( sleepTimer > MAX_SLEEP)
-				sleepTimer	=	MAX_SLEEP ;
-			_debug( 1, progName, "will go to sleep ... for %d seconds", sleepTimer) ;
-			sleep( sleepTimer) ;
+//			sleepTimer++ ;
+//			if ( sleepTimer > MAX_SLEEP)
+//				sleepTimer	=	MAX_SLEEP ;
+//			_debug( 1, progName, "will go to sleep ... for %d seconds", sleepTimer) ;
+//			sleep( sleepTimer) ;
 		}
 	}
 	/**

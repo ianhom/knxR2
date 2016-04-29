@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2015 wimtecc, Karl-Heinz Welter
+ * Copyright (c) 2015, 2016 wimtecc, Karl-Heinz Welter
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -45,28 +45,56 @@
 #include	"knxtpbridge.h"
 #include	"nodeinfo.h"
 #include	"mylib.h"
+#include	"inilib.h"
 
 extern	void	help() ;
 
 char	progName[64] ;
 int	debugLevel	=	0 ;
-
+/**
+ *
+ */
+int	cfgQueueKey	=	10031 ;
+int	cfgSenderAddr	=	1 ;
+/**
+ *
+ */
+void	iniCallback( char *_block, char *_para, char *_value) {
+	_debug( 1, progName, "receive ini value block/paramater/value ... : %s/%s/%s\n", _block, _para, _value) ;
+	if ( strcmp( _block, "[knxglobals]") == 0) {
+		if ( strcmp( _para, "queueKey") == 0) {
+			cfgQueueKey	=	atoi( _value) ;
+		}
+	} else if ( strcmp( _block, "[sendb1]") == 0) {
+		if ( strcmp( _para, "senderAddr") == 0) {
+			cfgSenderAddr	=	atoi( _value) ;
+		}
+	}
+}
+/**
+ *
+ */
 int main( int argc, char *argv[]) {
 			eibHdl		*myEIB ;
+			int		myAPN	=	0 ;
 			short		group ;
 	unsigned	char		buf[16] ;
 			int		msgLen ;
 			int		opt ;
-			int		queueKey	=	10031 ;
 			int		sender	=	0 ;
 			int		receiver	=	0 ;
 			int		value ;
 			int		repeat	=	1 ;		// default: repeat the EIB message
+			char		iniFilename[]	=	"knx.ini" ;
 	/**
 	 *
 	 */
 	strcpy( progName, *argv) ;
 	printf( "%s: starting up ... \n", progName) ;
+	/**
+	 *
+	 */
+	iniFromFile( iniFilename, iniCallback) ;
 	/**
 	 * get command line options
 	 */
@@ -76,7 +104,7 @@ int main( int argc, char *argv[]) {
 			debugLevel	=	atoi( optarg) ;
 			break ;
 		case	'Q'	:
-			queueKey	=	atoi( optarg) ;
+			cfgQueueKey	=	atoi( optarg) ;
 			break ;
 		case	'n'	:
 			repeat	=	0x0 ;
@@ -85,7 +113,7 @@ int main( int argc, char *argv[]) {
 			receiver	=	atoi( optarg) ;
 			break ;
 		case	's'	:
-			sender	=	atoi( optarg) ;
+			cfgSenderAddr	=	atoi( optarg) ;
 			break ;
 		case	'v'	:
 			value	=	atoi( optarg) ;
@@ -103,11 +131,11 @@ int main( int argc, char *argv[]) {
 	/**
 	 *
 	 */
-	if ( sender != 0 && receiver != 0) {
+	if ( cfgSenderAddr != 0 && receiver != 0) {
 		/**
 		 *
 		 */
-		myEIB	=	eibOpen( 0x0001, 0, queueKey) ;
+		myEIB	=	eibOpen( cfgSenderAddr, 0, cfgQueueKey, progName, APN_WRONLY) ;
 		eibWriteBit( myEIB, receiver, ( value & 0x01), 1) ;
 		eibClose( myEIB) ;
 	} else {

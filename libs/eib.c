@@ -44,6 +44,8 @@
 #include	<sys/shm.h>
 #include	<sys/msg.h>
 #include	<sys/sem.h>
+#include	<unistd.h>
+#include	<sys/signal.h>
 /**
  *
  */
@@ -55,7 +57,7 @@
 /**
  *
  */
-eibHdl	*eibOpen( unsigned int _sndAddr, int flags, key_t _key) {
+eibHdl	*eibOpen( unsigned int _sndAddr, int flags, key_t _key, char *_name, apnMode _mode) {
 	eibHdl	*this ;
 	int	i ;
 	/**
@@ -83,11 +85,27 @@ eibHdl	*eibOpen( unsigned int _sndAddr, int flags, key_t _key) {
 		exit( -1) ;
 	}
 	if ( flags == IPC_CREAT) {
-		this->shmKnxBus->writeRcvIndex	=	0 ;	// these are common for all simulators
+		this->shmKnxBus->writeRcvIndex	=	0 ;	// write pointer is common to all "users"
+                this->shmKnxBus->wdIncr =       0 ;
+		/**
+		 * create a semaphore set to control read access to the queue
+		 */
+		if (( this->shmKnxBus->sems = semget( this->semKey + 1, EIB_MAX_APN, flags | 0666)) < 0) {
+			_debug( 0, "eib.c", "could not create knxBus queue semaphore per APN ...\n") ;
+			exit( -1) ;
+		}
+		/**
+		 *
+		 */
+		_debug( 0, "eib.c", "resetting per APN semaphore\n") ;
 		for ( i=0 ; i < EIB_MAX_APN ; i++) {
 			this->shmKnxBus->apns[i]	=	0 ;
+			semctl( this->shmKnxBus->sems, i, SETVAL, 0) ;		// reset the semaphore to 0
 		}
-	}
+		eibDumpIPCData( this) ;
+	} else {
+                _eibAssignAPN( this, _name, _mode) ;
+        }
 	this->readRcvIndex	=	this->shmKnxBus->writeRcvIndex ;	// these are for each instance of this library
 	/**
 	 * create the semaphore for the send queue
@@ -101,6 +119,20 @@ eibHdl	*eibOpen( unsigned int _sndAddr, int flags, key_t _key) {
 	}
 	return this ;
 }
+void	eibDumpIPCData( eibHdl *this) {
+	int	i ;
+	printf( "Semaphore id ..... : %08lx %d \n", (unsigned long) this->semKey + 1, this->shmKnxBus->sems) ;
+	for ( i=0 ; i<EIB_MAX_APN; i++) {
+		printf( "   APN: %02d, semVal: %3d, used as APN: %02d, PID: %5d, wdCount: %3d, name: %-32s\n"
+                        ,       i
+                        ,       semctl( this->shmKnxBus->sems, i, GETVAL)
+                        ,       this->shmKnxBus->apns[i]
+                        ,       this->shmKnxBus->apnDesc[i].PID
+                        ,       this->shmKnxBus->apnDesc[i].wdCount
+                        ,       this->shmKnxBus->apnDesc[i].name
+                        ) ;
+	}
+}
 /**
  *
  */
@@ -108,7 +140,7 @@ void	eibClose( eibHdl *this) {
 	/**
 	 * if we are the process who originally created the communication stuff
 	 */
-	eibReleaseAPN( this) ;
+	_eibReleaseAPN( this) ;
 	if (( this->flags & IPC_CREAT) == IPC_CREAT) {
 		/**
 		 * destroy the semaphores
@@ -117,13 +149,22 @@ void	eibClose( eibHdl *this) {
 		/**
 		 * destroy shared memory
 		 */
-		shmdt( this->shmKnxBus) ;				// detach shared memory of knxBus
+		shmdt( this->shmKnxBus) ;					// detach shared memory of knxBus
 		shmctl( this->shmKnxBusId, IPC_RMID, NULL) ;
 	}
 	this->sndAddr	=	0 ;
 	free( this) ;
 }
-int	eibAssignAPN( eibHdl *this) {
+void    eibForceCloseAPN( eibHdl *this, int _apn) {
+        if ( this->shmKnxBus->apns[ _apn] == _apn) {
+		this->shmKnxBus->apns[ _apn]	=	0 ;
+                strcpy( this->shmKnxBus->apnDesc[ _apn].name, "(force released)") ;
+                this->shmKnxBus->apnDesc[ _apn].wdCount     =       0 ;
+                this->shmKnxBus->apnDesc[ _apn].PID     =       0 ;
+		semctl( this->shmKnxBus->sems, _apn, SETVAL, (int) 0) ;		// reset the semaphore to 0
+        }
+}
+int	_eibAssignAPN( eibHdl *this, char *_name, apnMode _mode) {
 	int	i ;
 	/**
 	 * skip apn[0] for future special purpose
@@ -131,14 +172,23 @@ int	eibAssignAPN( eibHdl *this) {
 	for ( i=1 ; i < EIB_MAX_APN && this->apn == 0 ; i++) {
 		if ( this->shmKnxBus->apns[i] == 0) {
 			this->apn	=	i ;
+                        strcpy( this->shmKnxBus->apnDesc[i].name, _name) ;
+                        this->shmKnxBus->apnDesc[i].wdCount     =       0 ;
+                        this->shmKnxBus->apnDesc[i].PID     =       getpid() ;
+                        this->shmKnxBus->apnDesc[i].mode        =       _mode ;
 			this->shmKnxBus->apns[this->apn]	=	i ;
+			semctl( this->shmKnxBus->sems, i, SETVAL, (int) 0) ;		// reset the semaphore to 0
 		}
 	}
 	return this->apn ;
 }
-void	eibReleaseAPN( eibHdl *this) {
-	if ( this->apn>= 0 && this->apn < EIB_MAX_APN) {
-		this->shmKnxBus->apns[this->apn]	=	0 ;
+void	_eibReleaseAPN( eibHdl *this) {
+	if ( this->apn >= 0 && this->apn < EIB_MAX_APN) {
+		this->shmKnxBus->apns[ this->apn]	=	0 ;
+                strcpy( this->shmKnxBus->apnDesc[ this->apn].name, "") ;
+                this->shmKnxBus->apnDesc[ this->apn].wdCount     =       0 ;
+                this->shmKnxBus->apnDesc[ this->apn].PID     =       0 ;
+		semctl( this->shmKnxBus->sems, this->apn, SETVAL, (int) 0) ;		// reset the semaphore to 0
 	}
 	this->apn	=	0 ;
 }
@@ -151,7 +201,7 @@ void	eibSetAddr( eibHdl *this, unsigned int _sndAddr) {
 /**
  * take a knx mesage from the receive queue
  */
-knxMsg	*eibReceive( eibHdl *this, knxMsg *msgBuf) {
+knxMsg	*eibReceiveMsg( eibHdl *this, knxMsg *msgBuf) {
 	knxMsg	*msgRcvd ;
 	/**
 	 * we do this in plain priority sequence
@@ -166,16 +216,21 @@ knxMsg	*eibReceive( eibHdl *this, knxMsg *msgBuf) {
 	 * we need to wait for the semaphore
 	 */
 //	_debug( 1, "eib.c", "waiting for receive buffer semaphore\n") ;
-	this->semKnxBusOp->sem_num		=	0 ;
 	this->semKnxBusOp->sem_op		=	-1 ;
+	this->semKnxBusOp->sem_num		=	this->apn ;
 	this->semKnxBusOp->sem_flg	=	SEM_UNDO ;
+	if ( this->shmKnxBus->apnDesc[this->apn].mode == APN_RDONLY) {
+		if( semop ( this->shmKnxBus->sems, this->semKnxBusOp, 1) == -1) {
+			perror( " semop ") ;
+			exit ( EXIT_FAILURE) ;
+		}
+	}
+        this->shmKnxBus->apnDesc[ this->apn].wdCount     =       0 ;
+	this->semKnxBusOp->sem_num		=	0 ;
 	if( semop ( this->semKnxBus, this->semKnxBusOp, 1) == -1) {
 		perror( " semop ") ;
 		exit ( EXIT_FAILURE) ;
 	}
-	/**
-	 * try to receive a message is there is one
-	 */
 	/**
 	 * try to receive a message is there is one
 	 */
@@ -187,7 +242,7 @@ knxMsg	*eibReceive( eibHdl *this, knxMsg *msgBuf) {
 		 * if we are at the end of the buffer
 		 *	reset to beginning
 		 */
-		if ( this->readRcvIndex >= EIB_RCV_BUFFER_SIZE) {
+		if ( this->readRcvIndex >= EIB_QUEUE_SIZE) {
 			this->readRcvIndex	=	0 ;
 		}
 		msgRcvd	=	msgBuf ;
@@ -196,6 +251,7 @@ knxMsg	*eibReceive( eibHdl *this, knxMsg *msgBuf) {
 	 * and release the semaphore
 	 */
 //	_debug( 1, "eib.c", "releasing receive buffer semaphore\n") ;
+	this->semKnxBusOp->sem_num		=	0 ;
 	this->semKnxBusOp->sem_op		=	1 ;
 	this->semKnxBusOp->sem_flg	=	SEM_UNDO ;
 	if( semop ( this->semKnxBus, this->semKnxBusOp, 1) == -1) {
@@ -210,6 +266,63 @@ knxMsg	*eibReceive( eibHdl *this, knxMsg *msgBuf) {
 		msgRcvd->apci	=	(( msgRcvd->mtext[0] & 0x03) << 2) | (( msgRcvd->mtext[1] & 0xc0) >> 6) ;
 	}
 	return( msgRcvd) ;
+}
+/**
+ * eibQueueMsg
+ *
+ * put a message into the internal receive buffer
+ *
+ */
+void	eibQueueMsg( eibHdl *this, knxMsg *msg) {
+	int	i ;
+	/**
+	 * we need to wait for the semaphore
+	 */
+	this->semKnxBusOp->sem_num		=	0 ;
+	this->semKnxBusOp->sem_op		=	-1 ;
+	this->semKnxBusOp->sem_flg	=	SEM_UNDO ;
+//	_debug( 0, "eib.c", "waiting for semaphore\n");
+	if( semop ( this->semKnxBus, this->semKnxBusOp, 1) == -1) {
+		_debug( 0, "eib.c", "Can not perform semaphore operation\n");
+		exit ( EXIT_FAILURE) ;
+	}
+        this->shmKnxBus->wdIncr =       5 ;
+	/**
+	 * put the message in the queue
+	 */
+//printf( "%d>P:...: read ...: %5d ... write ...: %5d %5d %5d\n", msg->apn, this->readRcvIndex, this->shmKnxBus->writeRcvIndex, msg->sndAddr, msg->rcvAddr) ;
+	memcpy( &this->shmKnxBus->rcvMsg[ this->shmKnxBus->writeRcvIndex], msg, KNX_MSG_SIZE) ;
+	this->shmKnxBus->writeRcvIndex	+=	1 ;
+	/**
+	 * if we are at the end of the buffer
+	 *	reset to beginning
+	 */
+	if ( this->shmKnxBus->writeRcvIndex >= EIB_QUEUE_SIZE) {
+		this->shmKnxBus->writeRcvIndex	=	0 ;
+	}
+	/**
+	 * and release the semaphore
+	 */
+	this->semKnxBusOp->sem_op		=	1 ;
+	this->semKnxBusOp->sem_flg	=	SEM_UNDO ;
+//	_debug( 0, "eib.c", "releasing for semaphore\n");
+	if( semop ( this->semKnxBus, this->semKnxBusOp, 1) == -1) {
+		perror( " semop ") ;
+		_debug( 0, "eib.c", "Can not perform semaphore operation\n");
+		exit ( EXIT_FAILURE) ;
+	}
+	this->semKnxBusOp->sem_op		=	1 ;
+	this->semKnxBusOp->sem_flg	=	0 ;
+	for ( i=1 ; i < EIB_MAX_APN ; i++) {
+		if ( this->shmKnxBus->apns[i] == i && this->shmKnxBus->apnDesc[ i].mode != APN_WRONLY) {
+			this->semKnxBusOp->sem_num	=	i ;
+			if ( semop ( this->shmKnxBus->sems, this->semKnxBusOp, 1) == -1) {
+				_debug( 0, "eib.c", "Can not perform semaphore operation\n");
+				exit ( EXIT_FAILURE) ;
+			}
+		}
+	}
+//	eibDumpIPCData( this) ;
 }
 /**
  *
@@ -345,15 +458,16 @@ void	eibDisect( knxMsg *msg) {
  */
 void	eibWriteBit( eibHdl *this, unsigned int receiver, unsigned char value, unsigned char repeat) {
 	knxMsg	myMsg ;
-printf( "APN .....: %d %d %d \n", this->apn, this->sndAddr, receiver) ;
+printf( "eib.c::eibWritebit: APN .....: %d %d %d \n", this->apn, this->sndAddr, receiver) ;
 	myMsg.apn	=	this->apn ;
+	myMsg.frameType	=	eibDataFrame ;
 	myMsg.control	=	0x9c | ( repeat << 5);
 	myMsg.sndAddr	=	this->sndAddr ;
 	myMsg.rcvAddr	=	receiver ;
 	myMsg.info	=	0xe0 | 0x01 ;
 	myMsg.mtext[0]	=	0x00 ;
 	myMsg.mtext[1]	=	0x80 | ( value & 0x01) ;
-	_eibPutReceive( this, &myMsg) ;
+	eibQueueMsg( this, &myMsg) ;
 }
 /**
  *
@@ -361,6 +475,7 @@ printf( "APN .....: %d %d %d \n", this->apn, this->sndAddr, receiver) ;
 void	eibWriteHalfFloat( eibHdl *this, unsigned int receiver, float value, unsigned char repeat) {
 	knxMsg	myMsg ;
 	myMsg.apn	=	this->apn ;
+	myMsg.frameType	=	eibDataFrame ;
 	myMsg.control	=	0x9c | ( repeat << 5);
 	myMsg.sndAddr	=	this->sndAddr ;
 	myMsg.rcvAddr	=	receiver ;
@@ -368,7 +483,7 @@ void	eibWriteHalfFloat( eibHdl *this, unsigned int receiver, float value, unsign
 	myMsg.mtext[0]	=	0x00 ;
 	myMsg.mtext[1]	=	0x80 ;
 	fthfb( value, &myMsg.mtext[2]) ;
-	_eibPutReceive( this, &myMsg) ;
+	eibQueueMsg( this, &myMsg) ;
 }
 /**
  *
@@ -380,6 +495,7 @@ void	eibWriteHalfFloat( eibHdl *this, unsigned int receiver, float value, unsign
 void	eibWriteTime( eibHdl *this, unsigned int receiver, int *data, unsigned char repeat) {
 	knxMsg	myMsg ;
 	myMsg.apn	=	this->apn ;
+	myMsg.frameType	=	eibDataFrame ;
 	myMsg.control	=	0x9c | ( repeat << 5);
 	myMsg.sndAddr	=	this->sndAddr ;
 	myMsg.rcvAddr	=	receiver ;
@@ -389,50 +505,7 @@ void	eibWriteTime( eibHdl *this, unsigned int receiver, int *data, unsigned char
 	myMsg.mtext[ 2]	=	(( data[0] & 0x07) << 5) | ( data[1] & 0x1f) ;
 	myMsg.mtext[ 3]	=	data[2] & 0x3f ;
 	myMsg.mtext[ 4]	=	data[3] & 0x3f ;
-	_eibPutReceive( this, &myMsg) ;
-}
-/**
- * _eibPutReceive
- *
- * put a message into the internal receive buffer
- *
- */
-void	_eibPutReceive( eibHdl *this, knxMsg *msg) {
-	/**
-	 * we need to wait for the semaphore
-	 */
-	this->semKnxBusOp->sem_num		=	0 ;
-	this->semKnxBusOp->sem_op		=	-1 ;
-	this->semKnxBusOp->sem_flg	=	SEM_UNDO ;
-//	_debug( 0, "eib.c", "waiting for semaphore\n");
-	if( semop ( this->semKnxBus, this->semKnxBusOp, 1) == -1) {
-		_debug( 0, "eib.c", "Can not perform semaphore operation\n");
-		exit ( EXIT_FAILURE) ;
-	}
-	/**
-	 * put the message in the queue
-	 */
-//printf( "%d>P:...: read ...: %5d ... write ...: %5d %5d %5d\n", msg->apn, this->readRcvIndex, this->shmKnxBus->writeRcvIndex, msg->sndAddr, msg->rcvAddr) ;
-	memcpy( &this->shmKnxBus->rcvMsg[ this->shmKnxBus->writeRcvIndex], msg, KNX_MSG_SIZE) ;
-	this->shmKnxBus->writeRcvIndex	+=	1 ;
-	/**
-	 * if we are at the end of the buffer
-	 *	reset to beginning
-	 */
-	if ( this->shmKnxBus->writeRcvIndex >= EIB_RCV_BUFFER_SIZE) {
-		this->shmKnxBus->writeRcvIndex	=	0 ;
-	}
-	/**
-	 * and release the semaphore
-	 */
-	this->semKnxBusOp->sem_op		=	1 ;
-	this->semKnxBusOp->sem_flg	=	SEM_UNDO ;
-//	_debug( 0, "eib.c", "releasing for semaphore\n");
-	if( semop ( this->semKnxBus, this->semKnxBusOp, 1) == -1) {
-		perror( " semop ") ;
-		_debug( 0, "eib.c", "Can not perform semaphore operation\n");
-		exit ( EXIT_FAILURE) ;
-	}
+	eibQueueMsg( this, &myMsg) ;
 }
 /**
  * hfbtf	- half-float binary to float

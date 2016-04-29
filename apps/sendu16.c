@@ -43,14 +43,40 @@
 #include	"eib.h"
 #include	"nodeinfo.h"
 #include	"mylib.h"
-
+#include	"inilib.h"
+/**
+ *
+ */
 extern	void	help() ;
 
 char	progName[64] ;
 int	debugLevel	=	0 ;
-
+/**
+ *
+ */
+int	cfgQueueKey	=	10031 ;
+int	cfgSenderAddr	=	1 ;
+/**
+ *
+ */
+void	iniCallback( char *_block, char *_para, char *_value) {
+	_debug( 1, progName, "receive ini value block/paramater/value ... : %s/%s/%s\n", _block, _para, _value) ;
+	if ( strcmp( _block, "[knxglobals]") == 0) {
+		if ( strcmp( _para, "queueKey") == 0) {
+			cfgQueueKey	=	atoi( _value) ;
+		}
+	} else if ( strcmp( _block, "[sendf16]") == 0) {
+		if ( strcmp( _para, "senderAddr") == 0) {
+			cfgSenderAddr	=	atoi( _value) ;
+		}
+	}
+}
+/**
+ *
+ */
 int main( int argc, char *argv[]) {
 			eibHdl		*myEIB ;
+			int		myAPN	=	0 ;
 			short		group ;
 	unsigned	char		buf[16] ;
 			int		msgLen ;
@@ -59,11 +85,16 @@ int main( int argc, char *argv[]) {
 			int		receiver	=	0 ;
 			int		value ;
 			int		repeat	=	0x20 ;
+			char		iniFilename[]	=	"knx.ini" ;
 	/**
 	 *
 	 */
 	strcpy( progName, *argv) ;
 	printf( "%s: starting up ... \n", progName) ;
+	/**
+	 *
+	 */
+	iniFromFile( iniFilename, iniCallback) ;
 	/**
 	 * get command line options
 	 */
@@ -71,6 +102,9 @@ int main( int argc, char *argv[]) {
 		switch ( opt) {
 		case	'D'	:
 			debugLevel	=	atoi( optarg) ;
+			break ;
+		case	'Q'	:
+			cfgQueueKey	=	atoi( optarg) ;
 			break ;
 		case	'n'	:
 			repeat	=	0x00 ;
@@ -101,7 +135,7 @@ int main( int argc, char *argv[]) {
 		/**
 		 *
 		 */
-		myEIB	=	eibOpen( 0x0001, 0x00, 10031) ;
+		myEIB	=	eibOpen( cfgSenderAddr, 0, cfgQueueKey, progName, APN_WRONLY) ;
 		eibWriteBit( myEIB, receiver, value, 1) ;
 		eibClose( myEIB) ;
 	} else {

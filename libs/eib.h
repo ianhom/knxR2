@@ -112,7 +112,21 @@ typedef struct {
 		unsigned	char	ppConf ;	// p2p Comfirmation
 							//	b10	confirm ok
 							//	b11	confirm not ok
-        } knxMsg ;
+	} knxMsg ;
+/**
+ *
+ */
+typedef	enum	apnMode		{
+		APN_RDWR	=	0
+	,	APN_RDONLY	=	1
+	,	APN_WRONLY	=	2
+	} apnMode ;
+typedef	struct	apnDescr	{
+		char	name[32] ;
+		apnMode	mode ;
+		pid_t	PID ;
+		int	wdCount ;
+	} apnDescr ;
 
 #define	KNX_ORIGIN_TP	0x01
 #define	KNX_ORIGIN_IP	0x02
@@ -120,23 +134,25 @@ typedef struct {
 
 #define	KNX_MSG_SIZE	sizeof( knxMsg)
 
-#define	EIB_RCV_BUFFER_SIZE	750
-#define	EIB_SND_BUFFER_SIZE	250
+#define	EIB_QUEUE_SIZE	750
 #define	EIB_MAX_APN		32
 
+/**
+ * the following structure will be located in shared memory!
+ */
 typedef	struct	knxBus	{
 		int	writeRcvIndex ;
 		int	readRcvIndex ;
-//		int	writeSndIndex ;
-//		int	readSndIndex ;
-		knxMsg	rcvMsg[EIB_RCV_BUFFER_SIZE] ;		// messages received through the bus
-//		knxMsg	sndMsg[EIB_SND_BUFFER_SIZE] ;		// messages to be transmitted to the bus
+		knxMsg	rcvMsg[EIB_QUEUE_SIZE] ;		// messages received through the bus
 		int	apns[EIB_MAX_APN] ;
+		apnDescr	apnDesc[EIB_MAX_APN] ;
+		key_t	sems ;					// semaphores to "trigger" the reading processes
+		int	wdIncr ;
 	}	knxBus ;
 
 #define	KNX_BUS_SIZE	sizeof( knxBus)
 
-typedef	struct	{
+typedef	struct	eibHdl	{
 			int	flags ;
 			key_t	shmKey ;
 			key_t	semKey ;
@@ -173,12 +189,13 @@ typedef	struct	{
 			void	(*cbEscape)( eibHdl *, knxMsg *) ;
 	}	eibCallbacks ;
 
-extern	eibHdl	*eibOpen( unsigned int, int, key_t _key) ;
+extern	eibHdl	*eibOpen( unsigned int, int, key_t, char *, apnMode) ;
 extern	void	eibClose( eibHdl *) ;
-extern	int	eibAssignAPN( eibHdl *) ;
-extern	void	eibReleaseAPN( eibHdl *) ;
+extern	void	eibForceCloseAPN( eibHdl *, int) ;
+extern	int	_eibAssignAPN( eibHdl *, char *_apnName, apnMode) ;
+extern	void	_eibReleaseAPN( eibHdl *) ;
 extern	void	eibSend( eibHdl *, knxMsg *) ;
-extern	knxMsg	*eibReceive( eibHdl *, knxMsg *) ;
+extern	knxMsg	*eibReceiveMsg( eibHdl *, knxMsg *) ;
 extern	void	eibWriteBit( eibHdl *, unsigned int, unsigned char, unsigned char) ;
 extern	void	eibWriteHalfFloat( eibHdl *, unsigned int, float, unsigned char) ;
 extern	void	eibWriteTime( eibHdl *, unsigned int, int *, unsigned char) ;
@@ -186,9 +203,10 @@ extern	void	dumpMsg( char *, knxMsg *) ;
 extern	void	eibDump( char *, knxMsg *) ;
 extern	void	eibDisect( knxMsg *) ;
 extern	knxMsg	*_eibGetSend( eibHdl *, knxMsg *) ;
-extern	void	_eibPutReceive(eibHdl *, knxMsg *)  ;
+extern	void	eibQueueMsg(eibHdl *, knxMsg *)  ;
 extern	int	eibGetAddr( eibHdl *) ;
 extern	void	eibSetAddr( eibHdl *, unsigned int) ;
+extern	void	eibDumpIPCData( eibHdl *) ;
 /**
  *
  */

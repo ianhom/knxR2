@@ -128,9 +128,9 @@ int	main( int argc, char *argv[]) {
 	/**
 	 * get command line options
 	 */
-	while (( opt = getopt( argc, argv, "d:m?")) != -1) {
+	while (( opt = getopt( argc, argv, "D:m?")) != -1) {
 		switch ( opt) {
-		case	'd'	:
+		case	'D'	:
 			debugLevel	=	atoi( optarg) ;
 			break ;
 		case	'm'	:
@@ -149,11 +149,11 @@ int	main( int argc, char *argv[]) {
 	/**
 	 *
 	 */
-	myEIB	=	eibOpen( deviceAddress, 0, 10031) ;
+	myEIB	=	eibOpen( deviceAddress, 0, 10031, "", 0) ;
 	sleepTimer	=	0 ;
 	while ( 1) {
 		printf( "%s: deviceAddress %04x, connectedTo %04x \n", progName, deviceAddress, connectedTo) ;
-		myMsg	=	eibReceive( myEIB, &myMsgBuf) ;
+		myMsg	=	eibReceiveMsg( myEIB, &myMsgBuf) ;
 		if ( myMsg != NULL) {
 			sleepTimer	=	0 ;
 			/**
@@ -188,7 +188,7 @@ void	cbOpenP2P( eibHdl *_myEIB, knxMsg *myMsg) {
 	if ( connectedTo == 0) {
 		myReply	=	getConfP2PMsg( _myEIB, myReply, myMsg->sndAddr) ;
 //		eibSend( _myEIB, myReply) ;
-		_eibPutReceive( _myEIB, myReply) ;
+		eibQueueMsg( _myEIB, myReply) ;
 		connectedTo	=	myReply->rcvAddr ;
 	} else {
 	}
@@ -215,7 +215,7 @@ void	cbIndividualAddrRequest( eibHdl *_myEIB, knxMsg *myMsg) {
 	printf( "%s: received IndividualAddrRequest ... \n", progName) ;
 	myReply	=	getIndividualAddrResponseMsg( _myEIB, myReply, 0x0000) ;
 //	eibSend( _myEIB, myReply) ;
-	_eibPutReceive( _myEIB, myReply) ;
+	eibQueueMsg( _myEIB, myReply) ;
 }
 
 void	cbIndividualAddrResponse( eibHdl *_myEIB, knxMsg *myMsg) {

@@ -40,9 +40,9 @@
 #include	<time.h>
 #include	<math.h>
 #include	<sys/types.h>
-#include	<sys/ipc.h> 
-#include	<sys/shm.h> 
-#include	<libxml/xmlreader.h> 
+#include	<sys/ipc.h>
+#include	<sys/shm.h>
+#include	<libxml/xmlreader.h>
 
 #include	"debug.h"
 #include	"mylib.h"
@@ -140,7 +140,7 @@ node	*getNodeTable( const char *filename, int *_count) {
 //				XML_PARSE_DTDATTR |  /* default DTD attributes */
 //				XML_PARSE_NOENT |    /* substitute entities */
 //				XML_PARSE_DTDVALID); /* validate with the DTD */
-	reader = xmlReaderForFile(filename, NULL, XML_PARSE_NOENT) ;
+	reader = xmlReaderForFile(filename, NULL, XML_PARSE_DTDATTR | XML_PARSE_NOENT) ;
 	if (reader != NULL) {
 		*_count	=	count( reader);
 		nodeTable	=	malloc( *_count * ( sizeof( node))) ;
@@ -153,9 +153,9 @@ node	*getNodeTable( const char *filename, int *_count) {
 		/**
 		 * Once the document has been fully parsed check the validation results
 		 */
-		if ( xmlTextReaderIsValid( reader) != 1) {
-			fprintf(stderr, "Document %s does not validate\n", filename);
-		}
+//		if ( xmlTextReaderIsValid( reader) != 1) {
+//			fprintf(stderr, "Document %s does not validate\n", filename);
+//		}
 		xmlFreeTextReader(reader);
 		if (ret != 0) {
 			fprintf(stderr, "%s : failed to parse\n", filename);

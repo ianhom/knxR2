@@ -32,14 +32,16 @@
 #include	"knxlog.h"
 #include	"nodeinfo.h"
 #include	"knxprot.h"
-
 #include	"eib.h"		// rs232.c will differentiate:
 				// ifdef  __MAC__
 				// 	simulation
 				// else
 				// 	real life
 #include	"mylib.h"
-
+#include	"inilib.h"
+/**
+ *
+ */
 typedef	enum	_stateProg	{
 			idle
 		,	openCon
@@ -109,7 +111,29 @@ int	deviceToProg	=	0x1234 ;		// thats the device we want to program
 int	connectTo	=	0 ;
 int	connectedTo	=	0 ;
 int	talkingTo	=	0 ;
-
+/**
+ *
+ */
+int	cfgQueueKey	=	10031 ;
+int	cfgSenderAddr	=	1 ;
+/**
+ *
+ */
+void	iniCallback( char *_block, char *_para, char *_value) {
+	_debug( 1, progName, "receive ini value block/paramater/value ... : %s/%s/%s\n", _block, _para, _value) ;
+	if ( strcmp( _block, "[knxglobals]") == 0) {
+		if ( strcmp( _para, "queueKey") == 0) {
+			cfgQueueKey	=	atoi( _value) ;
+		}
+	} else if ( strcmp( _block, "[knxprogaddr]") == 0) {
+		if ( strcmp( _para, "senderAddr") == 0) {
+			cfgSenderAddr	=	atoi( _value) ;
+		}
+	}
+}
+/**
+ *
+ */
 int	main( int argc, char *argv[]) {
 			eibHdl		*myEIB ;
 			int	opt ;
@@ -137,6 +161,7 @@ int	main( int argc, char *argv[]) {
 			knxMsg	myCmdBuf ;
 			knxMsg	*myCmd ;
 			int	waiting ;
+	char	iniFilename[]	=	"knx.ini" ;
 	/**
 	 *
 	 */
@@ -144,6 +169,10 @@ int	main( int argc, char *argv[]) {
 	strcpy( progName, *argv) ;
 	myKnxLogger	=	knxLogOpen( 0) ;
 	knxLog( myKnxLogger, progName, "starting up ...") ;
+	/**
+	 *
+	 */
+	iniFromFile( iniFilename, iniCallback) ;
 	/**
 	 * get command line options
 	 */
@@ -170,7 +199,7 @@ int	main( int argc, char *argv[]) {
 	 */
 	myCmd	=	&myCmdBuf ;
 	myState	=	enqAddr ;
-	myEIB	=	eibOpen( 0x0201, 0, 10031) ;
+	myEIB	=	eibOpen( cfgSenderAddr, 0x00, cfgQueueKey, progName, APN_RDWR) ;
 	myState	=	idle ;
 	while ( myState != done) {
 		switch ( myState) {
@@ -181,7 +210,7 @@ int	main( int argc, char *argv[]) {
 		case	openCon	:
 			myCmd	=	getOpenP2PMsg( myEIB, myCmd, connectTo) ;
 //			eibSend( myEIB, myCmd) ;
-			_eibPutReceive( myEIB, myCmd) ;
+			eibQueueMsg( myEIB, myCmd) ;
 			myState	=	waitCon ;
 			waiting	=	0 ;
 			break ;
@@ -195,18 +224,18 @@ int	main( int argc, char *argv[]) {
 			break ;
 		case	closeCon	:
 //			eibSend( myEIB, myCmd) ;
-			_eibPutReceive( myEIB, myCmd) ;
+			eibQueueMsg( myEIB, myCmd) ;
 			myState	=	enqAddr ;
 			break ;
 		case	readMask	:
 //			eibSend( myCmd) ;
-			_eibPutReceive( myEIB, myCmd) ;
+			eibQueueMsg( myEIB, myCmd) ;
 			myState	=	done ;
 			break ;
 		case	enqAddr	:
 			myCmd	=	getIndividualAddrRequestMsg( myEIB, myCmd, 0x0000) ;
 //			eibSend( myEIB, myCmd) ;
-			_eibPutReceive( myEIB, myCmd) ;
+			eibQueueMsg( myEIB, myCmd) ;
 			myState	=	waitAddr ;
 			waiting	=	0 ;
 			break ;
@@ -221,13 +250,13 @@ int	main( int argc, char *argv[]) {
 		case	writeAddr	:
 			myCmd	=	getIndividualAddrWriteMsg( myEIB, myCmd, 0x0000) ;
 //			eibSend( myEIB, myCmd) ;
-			_eibPutReceive( myEIB, myCmd) ;
+			eibQueueMsg( myEIB, myCmd) ;
 			myState	=	openCon ;
 			break ;
 		case	done	:
 			break ;
 		}
-		myMsg	=	eibReceive( myEIB, &myMsgBuf) ;
+		myMsg	=	eibReceiveMsg( myEIB, &myMsgBuf) ;
 		if ( myMsg != NULL) {
 			sleepTimer	=	0 ;
 			/**

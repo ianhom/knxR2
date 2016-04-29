@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2015 wimtecc, Karl-Heinz Welter
+ * Copyright (c) 2015, 2016 wimtecc, Karl-Heinz Welter
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,7 +21,7 @@
  */
 /**
  *
- * mylib.c
+ * inilib.c
  *
  * some useful functions
  *
@@ -29,7 +29,8 @@
  *
  * date		rev.	who	what
  * ----------------------------------------------------------------------------
- * 2015-11-20	PA1	userId	inception;
+ * 2015-11-20	PA1	khw	inception;
+ * 2016-04-27	PA2	khw	reduced to the max;
  *
  */
 #include	<stdio.h>
@@ -37,37 +38,67 @@
 #include	<stdint.h>
 #include	<string.h>
 #include	<strings.h>
+#include	<unistd.h>
 #include	<time.h>
 #include	<math.h>
 #include	<sys/types.h>
 #include	<sys/ipc.h>
 #include	<sys/shm.h>
+#include	<pwd.h>
 
-#include	"debug.h"
 #include	"inilib.h"
 
-ini	*iniFromFile( char *_file, iniCB _iniCB) {
-	int	status = -1 ;
-	int	i ;
-	ini	*this ;
-	int	lc ;
-	int	tc ;
-	char	line[128] ;
-	char	block[32], para[32], value[64] ;
-	char	*lp, *p ;
-	int	earlEx ;
+iniStat	iniFromFile( char *_file, iniCB _iniCB) {
+		iniStat	status	=	OK ;
+		int	i ;
+		int	lc ;
+		int	tc ;
+		char	line[128] ;
+		char	block[32], para[32], value[64] ;
+		char	*lp, *p ;
+		int	earlEx ;
+		FILE	*iniFile ;
+	const	char	*homedir;
+		int	done	=	0 ;
+		int	pathId ;
+		char	fileName[128] ;
 	/**
 	 *
 	 */
-	this	=	malloc( sizeof( ini)) ;
-	if ( this) {
-		this->iniFile	=	fopen( _file, "r") ;
-		if ( this->iniFile) {
+	pathId	=	0 ;
+	while ( ! done) {
+		switch ( pathId) {
+		case	0	:
+			strcpy( fileName, "/etc/knx.d/") ;
+			strcat( fileName, _file) ;
+			iniFile	=	fopen( fileName, "r") ;
+			if ( ! iniFile) {
+//				printf( "inilib.c: could not open(find?) ini file [%s]\n", fileName) ;
+			}
+			break ;
+		case	1	:
+			if (( homedir = getenv("HOME")) == NULL) {
+				homedir	=	getpwuid( getuid())->pw_dir;
+			}
+			strcpy( fileName, homedir) ;
+			strcat( fileName, "/.") ;
+			strcat( fileName, _file) ;
+			iniFile	=	fopen( fileName, "r") ;
+			if ( ! iniFile) {
+//				printf( "inilib.c: could not open(find?) ini file [%s]\n", fileName) ;
+			}
+			break ;
+		default	:
+			done	=	1 ;
+			break ;
+		}
+		pathId++ ;
+		if ( iniFile) {
 			lc	=	0 ;
 			strcpy( block, "*") ;
 			strcpy( para, "*") ;
 			strcpy( value, "*") ;
-			while ( fgets( line, 128, this->iniFile)) {
+			while ( fgets( line, 128, iniFile)) {
 				lc++ ;
 				lp	=	line ;
 				tc	=	0 ;
@@ -96,111 +127,9 @@ ini	*iniFromFile( char *_file, iniCB _iniCB) {
 				strcpy( para, "*") ;
 				strcpy( value, "*") ;
 			}
-			fclose( this->iniFile) ;
-		} else {
-			printf( "inilib.c: could not open(find?) ini file\n") ;
+			fclose( iniFile) ;
+			iniFile	=	NULL ;
 		}
-	} else {
-		printf( "inilib.c: could not allocate buffer\n") ;
 	}
-	return this ;
-}
-
-ini	*iniFromFileOLD( char *_file, iniCB _iniCB) {
-		int	status = -1 ;
-		int	i ;
-		ini	*this ;
-		int	lc ;
-		char	line[128] ;
-	this	=	malloc( sizeof( ini)) ;
-	if ( this) {
-		this->iniFile	=	fopen( _file, "r") ;
-		if ( this->iniFile) {
-			lc	=	0 ;
-			while ( fgets( line, 128, this->iniFile)) {
-				lc++ ;
-				printf( "%5d : Line ... : '%s", lc, line) ;
-			}
-			*this->lines	=	malloc( sizeof( char *) * ( lc+1)) ;
-			this->lines[lc]	=	NULL ;
-			rewind( this->iniFile) ;
-			lc	=	0 ;
-			while ( fgets( line, 128, this->iniFile)) {
-				this->lines[lc]	=	malloc( strlen( line)+2) ;
-				strcpy( this->lines[lc], line) ;
-				printf( "%5d : Line .>. : '%s", lc, this->lines[lc]) ;
-				lc++ ;
- 			}
-			fclose( this->iniFile) ;
-		} else {
-			printf( "inilib.c: could not open(find?) ini file\n") ;
-		}
-	} else {
-		printf( "inilib.c: could not allocate buffer\n") ;
-	}
-	return this ;
-}
-
-char	*getPara( ini *this, char *_block, char *_name, char *_buf) {
-	char	**lp ;
-	int	inBlock	=	0 ;
-	int	tc ;
-	char	*p, para[64] ;
-	lp	=	this->lines ;
-	while ( *lp != NULL) {
-		printf( "%s", *lp) ;
-		if ( strncmp( _block, *lp, strlen( _block)) == 0 && inBlock == 0) {
-			inBlock	=	1 ;
-			printf( "found block ... \n") ;
-		} else if ( inBlock == 1) {
-			if ( *lp[0] == '[') {
-				printf( "found end-of-block\n") ;
-				inBlock	=	0 ;
-			} else {
-				tc	=	0 ;
-				for ( p=strtok( *lp, " \t\n") ; p != NULL ; p=strtok( NULL, " \t\n")) {
-					switch ( tc) {
-					case	0	:
-						strcpy( para, p) ;
-						break ;
-					case	1	:
-						break ;
-					case	2	:
-						if ( strcmp( _name, para) == 0) {
-							strcpy( _buf, p) ;
-						}
-						break ;
-					default	:
-						break ;
-					}
-					tc++ ;
-				}
-			}
-		}
-		lp++ ;
-	}
-	return _buf ;
-}
-
-void dump( ini *this) {
-	char	**lp ;
-	lp	=	this->lines ;
-	while ( *lp != NULL) {
-		printf( "%s", *lp++) ;
-	}
-}
-
-ini	*release( ini *this) {
-	char	**lp ;
-	if ( this) {
-		lp	=	this->lines ;
-		while ( *lp != NULL) {
-			free( *lp++) ;
-		}
-//		free( *this->lines) ;
-		free( this) ;
-		this	=	NULL ;
-	} else {
-	}
-	return this ;
+	return status ;
 }

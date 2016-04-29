@@ -21,53 +21,70 @@
  */
 /**
  *
- * simswitch.c
+ * knxbackbone.c
  *
- * simulates pressing a "switch" periodically
- * useful for testing the core functions
+ * EIB/KNX backbone process
+ *
+ * knxbackbone as such does not do more but create a shared memory segment
+ * which serves as the central buffer for all EIB messages.
+ * Accessing this central buffer happens through the usage of functions in
+ * the "eib" library, which provides all necessary functions for opening
+ * and closing connections to the EIB messagign world as well as sending
+ * and receiving messages.
+ *
+ * When a programm wants to gain access to EIB messages, be it for sending,
+ * writing or both, it opens a connection to the knx-backbone through a call to
+ * "eibOpen".
+ *
  *
  * Revision history
  *
- * date		rev.	who	what
- * ----------------------------------------------------------------------------
- * 2016-01-25	PA1	khw	inception;
+ * Date		Rev.	Who	what
+ * -----------------------------------------------------------------------------
+ * 2016-03-02	PA1	khw	inception;
+ * 2016-04-26	PA2	khw	added explanation of the mechanism;
  *
  */
 #include	<stdio.h>
-#include	<string.h>
-#include	<strings.h>
-#include	<unistd.h>
 #include	<stdlib.h>
 #include	<strings.h>
+#include	<unistd.h>
 #include	<time.h>
+#include	<math.h>
 #include	<sys/types.h>
 #include	<sys/ipc.h>
 #include	<sys/shm.h>
 #include	<sys/msg.h>
+#include	<sys/sem.h>
 #include	<sys/signal.h>
 
-#include	"eib.h"
 #include	"debug.h"
+#include	"knxlog.h"
+#include	"rs232.h"
+#include	"eib.h"
 #include	"nodeinfo.h"
 #include	"mylib.h"
-#include	"knxlog.h"
-
+#include	"knxtpbridge.h"
+#include	"inilib.h"
+/**
+ *
+ */
+#define	MAX_SLEEP	1
+#define	SLEEP_TIME	1
+/**
+ *
+ */
 extern	void	help() ;
-
-char	progName[64] ;
-int	debugLevel	=	0 ;
+/**
+ *
+ */
+char	progName[64]  ;
+pid_t	ownPID ;
 knxLogHdl	*myKnxLogger ;
 /**
  *
  */
-void	sigHandler( int _sig) {
-	debugLevel	=	-1 ;
-}
-/**
- *
- */
 int	cfgQueueKey	=	10031 ;
-int	cfgSenderAddr	=	1 ;
 /**
  *
  */
@@ -77,29 +94,32 @@ void	iniCallback( char *_block, char *_para, char *_value) {
 		if ( strcmp( _para, "queueKey") == 0) {
 			cfgQueueKey	=	atoi( _value) ;
 		}
-	} else if ( strcmp( _block, "[simswitch]") == 0) {
-		if ( strcmp( _para, "senderAddr") == 0) {
-			cfgSenderAddr	=	atoi( _value) ;
-		}
 	}
 }
 /**
  *
  */
 int	main( int argc, char *argv[]) {
-		eibHdl	*myEIB ;
-		int	status		=	0 ;
-		int		opt ;
+	eibHdl	*myEIB ;
+	int	opt ;
+	int	i ;
+	char	iniFilename[]	=	"knx.ini" ;
+	/**
+	 * setup the shared memory for EIB Receiving Buffer
+	 */
+	setbuf( stdout, NULL) ;
+	strcpy( progName, *argv) ;
+	myKnxLogger	=	knxLogOpen( 0) ;
+	knxLog( myKnxLogger, progName, "starting up ...") ;
 	/**
 	 *
 	 */
-	signal( SIGINT, sigHandler) ;
-	strcpy( progName, *argv) ;
-	_debug( 0, progName, "starting up ...") ;
+	debugLevel	=	0 ;
+	iniFromFile( iniFilename, iniCallback) ;
 	/**
 	 * get command line options
 	 */
-	while (( opt = getopt( argc, argv, "D:Q:?")) != -1) {
+	while (( opt = getopt( argc, argv, "MQ:SD:?")) != -1) {
 		switch ( opt) {
 		case	'D'	:
 			debugLevel	=	atoi( optarg) ;
@@ -117,24 +137,24 @@ int	main( int argc, char *argv[]) {
 			break ;
 		}
 	}
-	myKnxLogger	=	knxLogOpen( 0) ;
-	knxLog( myKnxLogger, progName, "starting up ...") ;
 	/**
 	 *
 	 */
-	myEIB	=	eibOpen( cfgSenderAddr, 0, cfgQueueKey, progName, APN_RDWR) ;
-	printf( "myAPN ..... %d \n", myEIB->apn) ;
-	while ( debugLevel >= 0) {
-		eibWriteBit( myEIB, 10001, 0, 1) ;
-		sleep( 5) ;
-	}
-	knxLog( myKnxLogger, progName, "terminating ...") ;
+	myEIB	=	eibOpen( 0x0000, 0, cfgQueueKey, progName, 0) ;
+	eibDumpIPCData( myEIB) ;
+	eibClose( myEIB) ;
+	/**
+	 * close virtual EIB bus
+	 * close KNX Level logger
+	 */
 	knxLogClose( myKnxLogger) ;
-	exit( status) ;
+	/**
+	 *
+	 */
+	exit( 0) ;
 }
 
 void	help() {
-	printf( "%s: %s -d=<debugLevel> -w -b \n\n", progName, progName) ;
-	printf( "-w handle water tank\n") ;
-	printf( "-b handle heating buffer\n") ;
+	printf( "%s: %s [-D <debugLevel>] [-Q=<queueIdf>] [-M] [-S] \n\n", progName, progName) ;
+	printf( "Start a TPUART<->SimEIB/KNX bridge with id queueId.\n") ;
 }
